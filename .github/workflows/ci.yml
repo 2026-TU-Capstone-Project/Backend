@@ -31,11 +31,10 @@ jobs:
         ports:
           - 6379:6379
         options: >-
-          --health-cmd="redis-cli -a ${{ secrets.REDIS_PASSWORD }} ping"
+          --health-cmd="redis-cli ping"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
-          --command redis-server --requirepass ${{ secrets.REDIS_PASSWORD }}
 
     steps:
       - uses: actions/checkout@v4
@@ -57,7 +56,7 @@ jobs:
 
           SPRING_DATA_REDIS_HOST: localhost
           SPRING_DATA_REDIS_PORT: 6379
-          SPRING_DATA_REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
+          SPRING_DATA_REDIS_PASSWORD: ""   # 🔹 CI에서는 비밀번호 없음
 
       - name: Test
         run: ./gradlew test
@@ -68,4 +67,4 @@ jobs:
 
           SPRING_DATA_REDIS_HOST: localhost
           SPRING_DATA_REDIS_PORT: 6379
-          SPRING_DATA_REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
+          SPRING_DATA_REDIS_PASSWORD: ""
