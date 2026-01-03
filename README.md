@@ -17,9 +17,11 @@
 - **Java**: 21
 - **Spring Boot**: 4.0.1
 - **Database**: MySQL 8.0
+- **Cache**: Redis 7
 - **ORM**: Spring Data JPA
 - **Build Tool**: Gradle
 - **Container**: Docker & Docker Compose
+- **CI/CD**: GitHub Actions
 
 ## 📦 사전 요구사항
 
@@ -60,11 +62,11 @@ copy .env.example .env
 2. **Docker Desktop 실행 확인**
    - Docker Desktop이 실행 중인지 확인하세요.
 
-3. **MySQL 컨테이너 시작**
+3. **MySQL 및 Redis 컨테이너 시작**
    ```bash
-   docker-compose up -d mysql
+   docker-compose up -d mysql redis
    ```
-   - MySQL이 완전히 시작될 때까지 약 10-20초 대기하세요.
+   - MySQL과 Redis가 완전히 시작될 때까지 약 10-20초 대기하세요.
 
 4. **애플리케이션 실행**
    ```bash
@@ -115,10 +117,10 @@ docker-compose up -d --build
 
 ### 로컬 개발 환경 실행
 
-#### 1. MySQL 컨테이너만 실행
+#### 1. MySQL 및 Redis 컨테이너 실행
 
 ```bash
-docker-compose up -d mysql
+docker-compose up -d mysql redis
 ```
 
 #### 2. 애플리케이션 실행
@@ -132,32 +134,17 @@ docker-compose up -d mysql
 java -jar build/libs/*.jar
 ```
 
-## 🔧 환경변수 설명
-
-### JPA 설정
-
-| 변수명 | 설명 | 기본값 |
-|--------|------|--------|
-| `SPRING_JPA_HIBERNATE_DDL_AUTO` | DDL 자동 생성 모드 (`none`, `validate`, `update`, `create`, `create-drop`) | `update` |
-| `SPRING_JPA_SHOW_SQL` | SQL 쿼리 로그 출력 여부 | `true` |
-
-### 로깅 설정
-
-| 변수명 | 설명 | 기본값 |
-|--------|------|--------|
-| `LOG_LEVEL_ROOT` | 루트 로그 레벨 | `INFO` |
-| `LOG_LEVEL_SPRING_WEB` | Spring Web 로그 레벨 | `INFO` |
-| `LOG_LEVEL_HIBERNATE_SQL` | Hibernate SQL 로그 레벨 | `DEBUG` |
-
 ## 💻 개발 가이드
 
 ### 데이터베이스 접속
+
+#### MySQL 접속
 
 Docker Compose로 실행한 경우:
 
 ```bash
 # MySQL 컨테이너에 접속
-docker exec -it capstone-mysql mysql -u capstone_user -p capstone_db
+docker exec -it capstone-mysql mysql -u user -p capstone_db
 
 # 또는 root로 접속
 docker exec -it capstone-mysql mysql -u root -p
@@ -166,7 +153,22 @@ docker exec -it capstone-mysql mysql -u root -p
 로컬 MySQL 클라이언트 사용 시:
 
 ```bash
-mysql -h localhost -P 3306 -u capstone_user -p capstone_db
+mysql -h localhost -P 3307 -u user -p capstone_db
+```
+
+#### Redis 접속
+
+Docker Compose로 실행한 경우:
+
+```bash
+# Redis 컨테이너에 접속
+docker exec -it capstone-redis redis-cli
+```
+
+로컬 Redis 클라이언트 사용 시:
+
+```bash
+redis-cli -h localhost -p 6379
 ```
 
 ### API 테스트
@@ -192,42 +194,6 @@ mysql -h localhost -P 3306 -u capstone_user -p capstone_db
 ### 데이터베이스 초기화
 
 `init.sql` 파일에 초기 데이터베이스 스키마나 데이터를 추가할 수 있습니다. 이 파일은 MySQL 컨테이너가 처음 시작될 때 자동으로 실행됩니다.
-
-## 🔒 보안 주의사항
-
-1. **프로덕션 환경**에서는 반드시 `.env` 파일의 비밀번호를 강력한 값으로 변경하세요.
-2. `.env` 파일은 절대 Git에 커밋하지 마세요.
-3. Docker secrets나 환경변수 관리 도구를 사용하는 것을 권장합니다.
-
-## 🐛 문제 해결
-
-### 포트 충돌
-
-포트가 이미 사용 중인 경우 `.env` 파일에서 포트를 변경하세요:
-
-```env
-SERVER_PORT=8081
-MYSQL_PORT=3307
-```
-
-### 데이터베이스 연결 실패
-
-1. MySQL 컨테이너가 정상적으로 실행 중인지 확인:
-   ```bash
-   docker-compose ps
-   ```
-
-2. MySQL 로그 확인:
-   ```bash
-   docker-compose logs mysql
-   ```
-
-3. 환경변수가 올바르게 설정되었는지 확인:
-   ```bash
-   docker-compose config
-   ```
-
-### 컨테이너 재시작
 
 ```bash
 # 특정 서비스 재시작

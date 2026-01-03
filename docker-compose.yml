@@ -1,3 +1,5 @@
+version: "3.8"
+
 services:
   mysql:
     image: mysql:8.0
@@ -9,43 +11,58 @@ services:
       MYSQL_USER: ${MYSQL_USER}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     ports:
-      - "${MYSQL_PORT:-3307}:3306"
+      - "3307:3306"   # 로컬 접근용
     volumes:
       - mysql_data:/var/lib/mysql
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
-    networks:
-      - capstone-network
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-rootpassword}"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - capstone-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: capstone-redis
+    restart: always
+    command: redis-server --requirepass ${SPRING_DATA_REDIS_PASSWORD}
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${SPRING_DATA_REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - capstone-network
 
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    build: .
     container_name: capstone-app
     restart: always
     ports:
       - "${SERVER_PORT}:8080"
     environment:
-      # Spring Boot Datasource (MySQL 설정 자동 참조)
-      SPRING_DATASOURCE_HOST: ${SPRING_DATASOURCE_HOST}
-      SPRING_DATASOURCE_DATABASE: ${MYSQL_DATABASE}
-      SPRING_DATASOURCE_USERNAME: ${MYSQL_USER}
-      SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD}
-      SPRING_DATASOURCE_PORT: ${SPRING_DATASOURCE_PORT}
       SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL}
+      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME}
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD}
 
-      # JPA & Logging
-      SPRING_JPA_HIBERNATE_DDL_AUTO: ${SPRING_JPA_HIBERNATE_DDL_AUTO:-update}
-      SPRING_JPA_SHOW_SQL: ${SPRING_JPA_SHOW_SQL:-true}
-      LOG_LEVEL_ROOT: ${LOG_LEVEL_ROOT:-INFO}
-      LOG_LEVEL_SPRING_WEB: ${LOG_LEVEL_SPRING_WEB:-INFO}
-      LOG_LEVEL_HIBERNATE_SQL: ${LOG_LEVEL_HIBERNATE_SQL:-DEBUG}
+      SPRING_DATA_REDIS_HOST: ${SPRING_DATA_REDIS_HOST}
+      SPRING_DATA_REDIS_PORT: ${SPRING_DATA_REDIS_PORT}
+      SPRING_DATA_REDIS_PASSWORD: ${SPRING_DATA_REDIS_PASSWORD}
+
+      SPRING_JPA_HIBERNATE_DDL_AUTO: ${SPRING_JPA_HIBERNATE_DDL_AUTO}
+      SPRING_JPA_SHOW_SQL: ${SPRING_JPA_SHOW_SQL}
+
+      LOG_LEVEL_ROOT: ${LOG_LEVEL_ROOT}
+      LOG_LEVEL_SPRING_WEB: ${LOG_LEVEL_SPRING_WEB}
+      LOG_LEVEL_HIBERNATE_SQL: ${LOG_LEVEL_HIBERNATE_SQL}
     depends_on:
       mysql:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     networks:
       - capstone-network
@@ -56,4 +73,3 @@ volumes:
 networks:
   capstone-network:
     driver: bridge
-
