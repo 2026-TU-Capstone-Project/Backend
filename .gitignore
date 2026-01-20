@@ -1,0 +1,19 @@
+# 1. 구글 키
+src/main/resources/google-key.json
+
+# 2. 인텔리제이 설정 파일 (내 컴퓨터 설정이라 공유 X)
+.idea/
+*.iws
+*.iml
+*.ipr
+
+# 3. 빌드 결과물 (자동 생성되는 파일들이라 공유 X)
+build/
+out/
+
+# 4. 그레이들(Gradle) 설정 캐시
+.gradle/
+
+# 5. 맥/윈도우 시스템 파일 (지저분함)
+.DS_Store
+Thumbs.db
