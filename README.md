@@ -1,14 +1,16 @@
 # Capstone Project - Backend
 
-스프링부트 기반 백엔드 프로젝트입니다. Docker 환경에서 MySQL 데이터베이스와 함께 실행됩니다.
+Spring Boot 기반 백엔드 프로젝트입니다. BitStudio AI API를 활용한 Virtual Try-On 기능을 제공하며, Docker 환경에서 MySQL과 Redis와 함께 실행됩니다.
 
 ## 📋 목차
 
 - [기술 스택](#기술-스택)
+- [주요 기능](#주요-기능)
 - [프로젝트 구조](#프로젝트-구조)
 - [사전 요구사항](#사전-요구사항)
 - [환경 설정](#환경-설정)
 - [실행 방법](#실행-방법)
+- [API 문서](#api-문서)
 - [환경변수 설명](#환경변수-설명)
 - [개발 가이드](#개발-가이드)
 
@@ -19,6 +21,8 @@
 - **Database**: MySQL 8.0
 - **Cache**: Redis 7
 - **ORM**: Spring Data JPA
+- **HTTP Client**: Spring WebFlux (WebClient)
+- **External API**: BitStudio AI API
 - **Build Tool**: Gradle
 - **Container**: Docker & Docker Compose
 - **CI/CD**: GitHub Actions
@@ -177,6 +181,8 @@ redis-cli -h localhost -p 6379
 
 - **애플리케이션**: http://localhost:8080
 - **Health Check**: http://localhost:8080/actuator/health (Actuator 설정 시)
+
+**Postman 또는 다른 API 클라이언트를 사용하여 API를 테스트할 수 있습니다.**
 
 ### 빌드 및 테스트
 

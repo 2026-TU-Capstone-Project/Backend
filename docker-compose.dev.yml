@@ -1,0 +1,47 @@
+# 개발용 Docker Compose 설정
+# MySQL과 Redis만 실행 (애플리케이션은 로컬에서 실행)
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: capstone-mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    ports:
+      - "3307:3306"   # 로컬 접근용
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - capstone-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: capstone-redis
+    restart: always
+    command: redis-server --requirepass ${SPRING_DATA_REDIS_PASSWORD}
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${SPRING_DATA_REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - capstone-network
+
+volumes:
+  mysql_data:
+
+networks:
+  capstone-network:
+    driver: bridge

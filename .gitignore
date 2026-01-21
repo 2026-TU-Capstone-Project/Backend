@@ -38,6 +38,8 @@ out/
 
 ### Environment Variables ###
 .env
+*.properties
+!gradle-wrapper.properties
 
 ### Docker ###
 *.log
