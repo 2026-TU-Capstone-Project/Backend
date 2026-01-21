@@ -17,6 +17,11 @@ public class SecurityConfig {
 			.csrf(csrf -> csrf.disable())
 			.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 			.authorizeHttpRequests(auth -> auth
+				// Swagger UI 및 API 문서 경로 허용 (순서 중요)
+				.requestMatchers("/v3/api-docs/**", "/v3/api-docs").permitAll()
+				.requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/swagger-ui/index.html").permitAll()
+				.requestMatchers("/webjars/**", "/swagger-resources/**", "/configuration/**").permitAll()
+				// API 엔드포인트 허용
 				.requestMatchers("/api/v1/**").permitAll()
 				.anyRequest().authenticated()
 			);
