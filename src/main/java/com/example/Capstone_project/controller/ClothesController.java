@@ -2,10 +2,13 @@ package com.example.Capstone_project.controller;
 
 import com.example.Capstone_project.domain.Clothes;
 import com.example.Capstone_project.repository.ClothesRepository;
+import com.example.Capstone_project.service.ClothesAnalysisService;
 import com.example.Capstone_project.service.GoogleVisionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import com.example.Capstone_project.dto.ClothesRequestDto;
+
 
 import java.io.IOException;
 import java.util.List;
@@ -17,8 +20,9 @@ public class ClothesController {
 
     private final ClothesRepository clothesRepository;
     private final GoogleVisionService googleVisionService;
+    private final ClothesAnalysisService clothesAnalysisService;
 
-    // 1. 옷 등록 (AI 초정밀 분석 기능 탑재 🚀)
+    // 1. 옷 등록 (AI 초정밀 분석 기능 탑재)
     @PostMapping
     public String uploadClothes(
             @RequestParam("file") MultipartFile file,
@@ -163,8 +167,14 @@ public class ClothesController {
     }
 
     // 2. 옷 목록 조회
-    @GetMapping("")
-    public List<Clothes> listClothes() {
-        return clothesRepository.findAll();
+// ClothesController.java 수정 예시
+
+    @PostMapping("/analysis") // (주소는 원래 쓰던 거 유지)
+    public String analyze(@ModelAttribute ClothesRequestDto requestDto) {
+
+        // 서비스 호출 (이제 DTO를 넘겨주니까 에러가 사라집니다)
+        clothesAnalysisService.analyzeClothes(requestDto);
+
+        return "분석 요청 완료!";
     }
 }

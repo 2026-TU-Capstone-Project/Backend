@@ -17,3 +17,6 @@ out/
 # 5. 맥/윈도우 시스템 파일 (지저분함)
 .DS_Store
 Thumbs.db
+
+build/
+google-key.json
