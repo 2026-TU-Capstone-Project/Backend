@@ -1,20 +1,38 @@
 package com.example.Capstone_project.service;
 
+// 1. 프로젝트 파일들
 import com.example.Capstone_project.common.exception.BadRequestException;
-import com.example.Capstone_project.dto.*;
+import com.example.Capstone_project.dto.*; // VirtualFittingResponse 등 모든 DTO 포함
+
+// 2. Lombok & JSON 처리 (
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+// 3. Spring Framework
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
-import java.util.Base64;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
+// 4. Java 자료구조
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+// 5. Java 이미지 처리 & 파일 입출력
+import javax.imageio.ImageIO;
 import java.awt.Graphics2D;
+import java.awt.Image;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -23,18 +41,18 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.UUID;
-import javax.imageio.ImageIO;
-
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class GeminiService {
 	
+
 	private final WebClient geminiWebClient;
-	
+	private final ObjectMapper objectMapper = new ObjectMapper();
+
+	@Value("${gemini.api.key}")
+	private String geminiApiKey;
+
 	@Value("${gemini.api.model:gemini-3-pro-image-preview}")
 	private String model;
 	
@@ -397,4 +415,156 @@ public class GeminiService {
 			throw new BadRequestException("Failed to generate image: " + e.getMessage());
 		}
 	}
+	public VirtualFittingResponse processVirtualFitting(byte[] userImageBytes, byte[] topImageBytes, byte[] bottomImageBytes, String positivePrompt, String negativePrompt, String resolution) {
+		try {
+			// 1. 이미지 리사이징 (이미 구현된 메서드 활용)
+			byte[] resUser = resizeImageIfNeeded(userImageBytes);
+			byte[] resTop = resizeImageIfNeeded(topImageBytes);
+			byte[] resBottom = resizeImageIfNeeded(bottomImageBytes);
+
+			// 2. 형(동료)이 아래쪽에 짜놓은 진짜 요청 본문 생성기 호출! (중요)
+			// 형님 파일 아래쪽에 있는 'createGeminiRequestBody' 메서드를 그대로 씁니다.
+			Map<String, Object> requestBody = createGeminiRequestBody(
+					Base64.getEncoder().encodeToString(resUser),
+					Base64.getEncoder().encodeToString(resTop),
+					Base64.getEncoder().encodeToString(resBottom),
+					positivePrompt, negativePrompt
+			);
+
+			log.info("🚀 비동기 AI 요청 시작...");
+
+// ✅ 436행: 주소 설정
+			String endpoint = "/models/" + model + ":generateContent";
+
+			log.info("📡 구글 AI에게 사진을 전달했습니다. 응답 대기 중... (최대 60초)");
+
+			String responseString = geminiWebClient.post()
+					.uri(uriBuilder -> uriBuilder
+							.path(endpoint)
+							.queryParam("key", geminiApiKey)
+							.build())
+					.contentType(MediaType.APPLICATION_JSON)
+					.bodyValue(requestBody)
+					.retrieve()
+					.bodyToMono(String.class)
+					.timeout(java.time.Duration.ofSeconds(180))
+					.block();
+
+			// ✅ 2. 이 로그가 찍히는지 보는 게 핵심입니다!
+			log.info("📥 구글로부터 응답을 받았습니다! 데이터 해석을 시작합니다.");
+
+			// ✅ 448행: 응답을 객체로 변환
+			GeminiGenerateContentResponse responseObj = objectMapper.readValue(responseString, GeminiGenerateContentResponse.class);
+
+			// ✅ 450행: 형(동료)의 진짜 이미지 추출 로직 이식 (여기서부터 중요!)
+			GeminiGenerateContentResponse.Candidate candidate = responseObj.getCandidates().get(0);
+			String imageBase64 = null;
+			String mimeType = null;
+
+			for (GeminiGenerateContentResponse.Part part : candidate.getContent().getParts()) {
+				if (part.getInlineData() != null) {
+					imageBase64 = part.getInlineData().getData();
+					mimeType = part.getInlineData().getMimeType();
+					break;
+				}
+			}
+
+			if (imageBase64 == null) throw new BadRequestException("No image data in Gemini API response");
+
+			// ✅ 형(동료)이 115행에 만든 진짜 파일 저장 메서드 호출!
+			String imageUrl = saveBase64ImageToFile(imageBase64, mimeType);
+			String imageId = "gemini-" + System.currentTimeMillis();
+
+			log.info("💾 비동기 가상피팅 성공! 이미지 저장 경로: {}", imageUrl);
+
+			// ✅ 최종 결과 반환 (이 값이 FittingService를 통해 DB에 저장됩니다)
+			return VirtualFittingResponse.builder()
+					.imageId(imageId)
+					.status("completed")
+					.imageUrl(imageUrl)
+					.build();
+
+		} catch (Exception e) {
+			log.error("💥 가상피팅 엔진 오류: {}", e.getMessage());
+			throw new RuntimeException("AI 처리 실패: " + e.getMessage());
+		}
+	}
+
+	// =================================================================================
+	// [유틸 메서드] 리사이징 로직 (MultipartFile -> byte[] 로 변경됨)
+	// =================================================================================
+	private byte[] resizeImageIfNeeded(byte[] imageData) throws IOException {
+		// byte[]를 읽어서 이미지로 변환
+		InputStream inputStream = new ByteArrayInputStream(imageData);
+		BufferedImage originalImage = ImageIO.read(inputStream);
+
+		if (originalImage == null) return imageData;
+
+		int originalWidth = originalImage.getWidth();
+		int originalHeight = originalImage.getHeight();
+
+		// 형이 설정한 최대 크기 (1024)
+		int maxDimension = 1024;
+
+		if (originalWidth <= maxDimension && originalHeight <= maxDimension) {
+			return imageData; // 작으면 그냥 리턴
+		}
+
+		// 비율 계산
+		double ratio = Math.min((double) maxDimension / originalWidth, (double) maxDimension / originalHeight);
+		int newWidth = (int) (originalWidth * ratio);
+		int newHeight = (int) (originalHeight * ratio);
+
+		// 리사이징 실행
+		Image resultingImage = originalImage.getScaledInstance(newWidth, newHeight, Image.SCALE_SMOOTH);
+		BufferedImage outputImage = new BufferedImage(newWidth, newHeight, BufferedImage.TYPE_INT_RGB);
+		outputImage.getGraphics().drawImage(resultingImage, 0, 0, null);
+
+		// 다시 byte[]로 변환
+		ByteArrayOutputStream baos = new ByteArrayOutputStream();
+		ImageIO.write(outputImage, "jpg", baos);
+		return baos.toByteArray();
+	}
+	// ✅ 492행 쯤에 이 덩어리를 통째로 넣으세요!
+	private Map<String, Object> createGeminiRequestBody(String userImg, String topImg, String bottomImg, String pPrompt, String nPrompt) {
+		Map<String, Object> request = new HashMap<>();
+		List<Map<String, Object>> contents = new ArrayList<>();
+		Map<String, Object> content = new HashMap<>();
+		List<Map<String, Object>> parts = new ArrayList<>();
+
+		// 1. 이미지 데이터 3장 추가
+		addInlineData(parts, userImg);
+		addInlineData(parts, topImg);
+		addInlineData(parts, bottomImg);
+
+		// 2. 프롬프트 추가 (이게 빠져서 400 에러가 났던 겁니다!)
+		Map<String, Object> textPart = new HashMap<>();
+		textPart.put("text", pPrompt != null ? pPrompt : defaultPositivePrompt);
+		parts.add(textPart);
+
+		// 3. 조립
+		content.put("parts", parts);
+		contents.add(content);
+		request.put("contents", contents);
+
+		// 4. Generation Config 추가 (Pro 모델용 해상도 설정)
+		Map<String, Object> generationConfig = new HashMap<>();
+		Map<String, Object> imageConfig = new HashMap<>();
+		imageConfig.put("image_size", defaultResolution);
+		imageConfig.put("aspect_ratio", defaultAspectRatio);
+		generationConfig.put("image_config", imageConfig);
+		request.put("generationConfig", generationConfig);
+
+		return request;
+	}
+
+	private void addInlineData(List<Map<String, Object>> parts, String base64Data) {
+		Map<String, Object> part = new HashMap<>();
+		Map<String, Object> inlineData = new HashMap<>();
+		inlineData.put("mime_type", "image/jpeg");
+		inlineData.put("data", base64Data);
+		part.put("inline_data", inlineData);
+		parts.add(part);
+	}
+
 }

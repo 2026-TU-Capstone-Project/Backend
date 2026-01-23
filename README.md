@@ -19,6 +19,7 @@ Spring Boot 기반 백엔드 프로젝트입니다. BitStudio AI API를 활용�
 - **Java**: 21
 - **Spring Boot**: 4.0.1
 - **Database**: MySQL 8.0
+- **AI Engine**: **Google Gemini 1.5 Flash** (가상 피팅) & **Google Cloud Vision** (의류 분석)
 - **Cache**: Redis 7
 - **ORM**: Spring Data JPA
 - **HTTP Client**: Spring WebFlux (WebClient)
@@ -26,6 +27,13 @@ Spring Boot 기반 백엔드 프로젝트입니다. BitStudio AI API를 활용�
 - **Build Tool**: Gradle
 - **Container**: Docker & Docker Compose
 - **CI/CD**: GitHub Actions
+
+
+## 핵심 기능: AI 가상 피팅
+사용자의 사진에 상/하의를 자연스럽게 합성하는 기능을 제공합니다.
+
+- **비동기 처리**: 고해상도 생성 시에도 서버 안정성 유지
+- **이미지 최적화**: 자동 리사이징 및 타임아웃 방지 로직 적용
 
 ## 📦 사전 요구사항
 

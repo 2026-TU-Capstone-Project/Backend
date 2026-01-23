@@ -17,6 +17,8 @@ bin/
 !**/src/main/**/bin/
 !**/src/test/**/bin/
 
+images/virtual-fitting/
+application.yml
 ### IntelliJ IDEA ###
 .idea
 *.iws
@@ -47,3 +49,7 @@ out/
 ### OS ###
 .DS_Store
 Thumbs.db
+
+src/main/resources/application.properties
+src/main/resources/application-secret.properties
+*.properties

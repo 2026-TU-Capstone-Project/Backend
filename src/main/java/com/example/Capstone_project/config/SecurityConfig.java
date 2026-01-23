@@ -23,6 +23,7 @@ public class SecurityConfig {
 				.requestMatchers("/webjars/**", "/swagger-resources/**", "/configuration/**").permitAll()
 				// API 엔드포인트 허용
 				.requestMatchers("/api/v1/**").permitAll()
+					.requestMatchers("/api/fitting/**").permitAll()
 				.anyRequest().authenticated()
 			);
 		
