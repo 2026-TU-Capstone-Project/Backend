@@ -2,18 +2,31 @@ package com.example.Capstone_project.domain;
 
 import jakarta.persistence.*;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.time.LocalDateTime;
+
 @Entity
-@Getter @Setter
+@Table(name = "refresh_tokens")
+@Getter
+@Setter
+@NoArgsConstructor
 public class RefreshToken {
 
-    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "refresh_token_id")
     private Long id;
 
-    private String token;       // 토큰 값 (긴 문자열)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", nullable = false)
+    private User user;
 
-    private String keyEmail;    // 누구의 토큰인지 (사용자 이메일)
+    @Column(name = "token_value", nullable = false, length = 100, unique = true)
+    private String tokenValue;
 
-    // 이 부분은 나중에 "로그인 유지 시간"을 설정할 때 사용할 부분ㄴ
+    @Column(name = "expiry_date", nullable = false)
+    private LocalDateTime expiryDate;
 }
+
