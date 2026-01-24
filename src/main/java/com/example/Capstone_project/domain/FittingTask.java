@@ -25,7 +25,12 @@ public class FittingTask {
      * 기존 로직을 건드리지 않기 위해 insertable / updatable 은 false 로 둡니다.
      */
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", insertable = false, updatable = false)
+    @JoinColumn(
+            name = "user_id",
+            insertable = false,
+            updatable = false,
+            foreignKey = @ForeignKey(ConstraintMode.NO_CONSTRAINT)
+    )
     private User user;
 
     @Column(name = "top_id")
@@ -37,7 +42,12 @@ public class FittingTask {
      * 기존 서비스 코드 변경 없이 엔티티에서 접근만 가능하도록 insertable/updatable 을 막아둡니다.
      */
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "top_id", insertable = false, updatable = false)
+    @JoinColumn(
+            name = "top_id",
+            insertable = false,
+            updatable = false,
+            foreignKey = @ForeignKey(ConstraintMode.NO_CONSTRAINT)
+    )
     private Clothes top;
 
     @Column(name = "bottom_id")
@@ -47,7 +57,12 @@ public class FittingTask {
      * 하의 엔티티 연관관계 (읽기 전용)
      */
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "bottom_id", insertable = false, updatable = false)
+    @JoinColumn(
+            name = "bottom_id",
+            insertable = false,
+            updatable = false,
+            foreignKey = @ForeignKey(ConstraintMode.NO_CONSTRAINT)
+    )
     private Clothes bottom;
 
     @Column(name = "body_img_url")
