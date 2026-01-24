@@ -28,6 +28,7 @@ services:
     image: redis:7-alpine
     container_name: capstone-redis
     restart: always
+    # Values from .env file (matches application.properties)
     command: redis-server --requirepass ${SPRING_DATA_REDIS_PASSWORD}
     ports:
       - "6379:6379"
