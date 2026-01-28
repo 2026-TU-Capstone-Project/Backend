@@ -1,6 +1,6 @@
 plugins {
 	id 'java'
-	id 'org.springframework.boot' version '4.0.1'
+	id 'org.springframework.boot' version '3.4.2'
 	id 'io.spring.dependency-management' version '1.1.7'
 }
 
@@ -31,12 +31,21 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
+	implementation 'org.springframework.boot:spring-boot-starter-oauth2-client'
 	// SpringDoc OpenAPI (Swagger)
 	// Spring Boot 4.0.x / Spring Framework 6.2+ 호환을 위한 최신 버전
 	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.0'
 	implementation 'com.google.cloud:google-cloud-vision:3.18.0'
 	implementation 'com.google.cloud:google-cloud-storage:2.40.0'
+	// gRPC 및 Protobuf 관련 (옷 분석 서비스용)
+	implementation 'io.grpc:grpc-netty-shaded:1.62.2'
+	implementation 'io.grpc:grpc-protobuf:1.62.2'
+	implementation 'io.grpc:grpc-stub:1.62.2'
+	compileOnly 'org.apache.tomcat:annotations-api:6.0.53' // 빌드 시 필요
 	compileOnly 'org.projectlombok:lombok'
+	implementation 'io.jsonwebtoken:jjwt-api:0.11.5'
+	runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.11.5'
+	runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.11.5'
 	runtimeOnly 'com.mysql:mysql-connector-j'
 	annotationProcessor 'org.projectlombok:lombok'
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'

@@ -68,6 +68,9 @@ public class FittingTask {
     @Column(name = "body_img_url")
     private String bodyImgUrl; // 전신 사진 이미지 URL
 
+    @Column(name = "is_saved")
+    private boolean isSaved = false; // 기본값은 false (저장 안 함)
+
     // ★ 핵심: 현재 진행 상태
     @Enumerated(EnumType.STRING)
     private FittingStatus status;

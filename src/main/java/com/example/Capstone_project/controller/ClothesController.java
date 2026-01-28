@@ -5,7 +5,10 @@ import com.example.Capstone_project.domain.Clothes;
 import com.example.Capstone_project.repository.ClothesRepository;
 import com.example.Capstone_project.service.ClothesAnalysisService;
 import com.example.Capstone_project.dto.ClothesRequestDto;
+import com.example.Capstone_project.domain.User;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import lombok.RequiredArgsConstructor;
+import com.example.Capstone_project.config.CustomUserDetails;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -35,7 +38,8 @@ public class ClothesController {
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ApiResponse<String>> uploadClothes(
             @RequestParam("file") MultipartFile file,
-            @RequestParam("category") String category
+            @RequestParam("category") String category,
+            @AuthenticationPrincipal CustomUserDetails userDetails
     ) {
         log.info("Clothes upload request received - file: {}, category: {}", 
                 file.getOriginalFilename(), category);
@@ -46,7 +50,7 @@ public class ClothesController {
         }
 
         // 비동기로 옷 분석 및 저장 시작
-        clothesAnalysisService.analyzeAndSaveClothesAsync(file, category);
+        clothesAnalysisService.analyzeAndSaveClothesAsync(file, category, userDetails.getUser());
         
         log.info("✅ 옷 등록 요청 완료 - category: {} (비동기 처리 중)", category);
         return ResponseEntity.status(HttpStatus.ACCEPTED)
@@ -59,11 +63,11 @@ public class ClothesController {
      * 상의, 하의, 신발을 한 번에 분석
      */
     @PostMapping(value = "/analysis", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<ApiResponse<String>> analyze(@ModelAttribute ClothesRequestDto requestDto) {
+    public ResponseEntity<ApiResponse<String>> analyze(@ModelAttribute ClothesRequestDto requestDto,@AuthenticationPrincipal CustomUserDetails userDetails) {
         log.info("Clothes analysis request received");
         
         // 서비스 호출 (비동기 처리)
-        clothesAnalysisService.analyzeClothes(requestDto);
+        clothesAnalysisService.analyzeClothes(requestDto, userDetails.getUser());
 
         return ResponseEntity.status(HttpStatus.ACCEPTED)
                 .body(ApiResponse.success("Analysis request completed. Processing in background.", "분석 요청 완료!"));

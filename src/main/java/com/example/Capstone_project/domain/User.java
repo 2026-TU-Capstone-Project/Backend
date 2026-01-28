@@ -19,11 +19,23 @@ public class User {
     @Column(name = "user_id")
     private Long id;
 
+    @Column(nullable = false, length = 50, unique = true)
+    private String username;
+
     @Column(nullable = false, length = 30, unique = true)
     private String email;
 
     @Column(nullable = false, length = 100)
     private String password;
+
+    // nickname 추가
+    @Column(nullable = false)
+    private String nickname;
+
+    private String role;
+
+    @Column(name = "profile_image_url")
+    private String profileImageUrl;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "social_provider", length = 20)
@@ -41,6 +53,13 @@ public class User {
     @Column(name = "deleted_at", nullable = false)
     private Boolean deleted = false;
 
+    public User(String username, String email, String password, String nickname, String role) {
+        this.username = username;
+        this.email = email;
+        this.password = password;
+        this.nickname = nickname;
+        this.role = role;
+    }
     @PrePersist
     public void onCreate() {
         LocalDateTime now = LocalDateTime.now();

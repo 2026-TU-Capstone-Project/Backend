@@ -3,6 +3,7 @@ package com.example.Capstone_project.service;
 import com.example.Capstone_project.dto.VirtualFittingResponse;
 import com.example.Capstone_project.domain.FittingStatus;
 import com.example.Capstone_project.domain.FittingTask;
+import com.example.Capstone_project.domain.User;
 import com.example.Capstone_project.repository.FittingRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -11,7 +12,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
+import java.util.List;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -169,16 +170,19 @@ public class FittingService {
             String topImageFilename,
             byte[] bottomImageBytes,
             String bottomImageFilename,
-            ClothesAnalysisService clothesAnalysisService
+            ClothesAnalysisService clothesAnalysisService,
+            FittingTask task,
+            User user
     ) {
         log.info("🚀 [동기] 가상 피팅 전체 프로세스 시작 - Task ID: {}", taskId);
-        
+
         try {
+            final User currentUser = task.getUser();
             // 1. 옷 분석 시작 (병렬 처리 - 동일 taskExecutor 사용)
             CompletableFuture<Long> topAnalysisFuture = CompletableFuture.supplyAsync(() -> {
                 try {
                     log.info("🔄 [동기] 상의 분석 시작 - Task ID: {}", taskId);
-                    return clothesAnalysisService.analyzeAndSaveClothes(topImageBytes, topImageFilename, "Top");
+                    return clothesAnalysisService.analyzeAndSaveClothes(topImageBytes, topImageFilename, "Top", currentUser);
                 } catch (Exception e) {
                     log.error("❌ 상의 분석 중 오류 발생 - Task ID: {}", taskId, e);
                     return null;
@@ -188,7 +192,7 @@ public class FittingService {
             CompletableFuture<Long> bottomAnalysisFuture = CompletableFuture.supplyAsync(() -> {
                 try {
                     log.info("🔄 [동기] 하의 분석 시작 - Task ID: {}", taskId);
-                    return clothesAnalysisService.analyzeAndSaveClothes(bottomImageBytes, bottomImageFilename, "Bottom");
+                    return clothesAnalysisService.analyzeAndSaveClothes(bottomImageBytes, bottomImageFilename, "Bottom", currentUser);
                 } catch (Exception e) {
                     log.error("❌ 하의 분석 중 오류 발생 - Task ID: {}", taskId, e);
                     return null;
@@ -213,7 +217,7 @@ public class FittingService {
                     taskId, topId, bottomId);
 
             // 3. 가상 피팅 처리 (동기)
-            FittingTask task = fittingRepository.findById(taskId)
+            final FittingTask dbtask = fittingRepository.findById(taskId)
                     .orElseThrow(() -> new RuntimeException("Task not found: " + taskId));
 
             task.setStatus(FittingStatus.PROCESSING);
@@ -278,16 +282,19 @@ public class FittingService {
             String topImageFilename,
             byte[] bottomImageBytes,
             String bottomImageFilename,
-            ClothesAnalysisService clothesAnalysisService
+            ClothesAnalysisService clothesAnalysisService,
+            User user
     ) {
         log.info("🚀 [비동기] 가상 피팅 전체 프로세스 시작 - Task ID: {}", taskId);
-        
+
+        final User dbUser = user;
+
         try {
             // 1. 옷 분석 시작 (병렬 처리 - taskExecutor 사용)
             CompletableFuture<Long> topAnalysisFuture = CompletableFuture.supplyAsync(() -> {
                 try {
                     log.info("🔄 [비동기] 상의 분석 시작 - Task ID: {}", taskId);
-                    return clothesAnalysisService.analyzeAndSaveClothes(topImageBytes, topImageFilename, "Top");
+                    return clothesAnalysisService.analyzeAndSaveClothes(topImageBytes, topImageFilename, "Top", dbUser);
                 } catch (Exception e) {
                     log.error("❌ 상의 분석 중 오류 발생 - Task ID: {}", taskId, e);
                     return null;
@@ -297,7 +304,7 @@ public class FittingService {
             CompletableFuture<Long> bottomAnalysisFuture = CompletableFuture.supplyAsync(() -> {
                 try {
                     log.info("🔄 [비동기] 하의 분석 시작 - Task ID: {}", taskId);
-                    return clothesAnalysisService.analyzeAndSaveClothes(bottomImageBytes, bottomImageFilename, "Bottom");
+                    return clothesAnalysisService.analyzeAndSaveClothes(bottomImageBytes, bottomImageFilename, "Bottom", dbUser);
                 } catch (Exception e) {
                     log.error("❌ 하의 분석 중 오류 발생 - Task ID: {}", taskId, e);
                     return null;
@@ -375,4 +382,14 @@ public class FittingService {
         
         return styleAnalysis;
     }
+
+    @Transactional
+    public void saveTask(FittingTask task) {
+        fittingRepository.save(task);
+    }
+    @Transactional(readOnly = true)
+    public List<FittingTask> getSavedFittingList(Long userId) {
+        return fittingRepository.findByUserIdAndIsSavedTrue(userId);
+    }
+
 }

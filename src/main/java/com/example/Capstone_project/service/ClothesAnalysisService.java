@@ -1,6 +1,7 @@
 package com.example.Capstone_project.service;
 
 import com.example.Capstone_project.domain.Clothes;
+import com.example.Capstone_project.domain.User;
 import com.example.Capstone_project.dto.ClothesRequestDto;
 import com.example.Capstone_project.repository.ClothesRepository;
 import lombok.RequiredArgsConstructor;
@@ -255,10 +256,10 @@ public class ClothesAnalysisService {
      */
     @Async("taskExecutor")
     @Transactional
-    public void analyzeAndSaveClothesAsync(MultipartFile file, String category) {
+    public void analyzeAndSaveClothesAsync(MultipartFile file, String category, User user) {
         try {
             log.info("🤖 [비동기] 옷 분석 시작 - category: {}, filename: {}", category, file.getOriginalFilename());
-            analyzeAndSaveClothesInternal(file, category);
+            analyzeAndSaveClothesInternal(file, category, user);
             log.info("✅ [비동기] 옷 분석 및 저장 완료 - category: {}, filename: {}", category, file.getOriginalFilename());
         } catch (IOException e) {
             log.error("❌ [비동기] 옷 분석 중 오류 발생 - category: {}, filename: {}", category, file.getOriginalFilename(), e);
@@ -272,21 +273,21 @@ public class ClothesAnalysisService {
      * @param dto 옷 분석 요청 DTO (top, bottom, shoes 포함)
      */
     @Async("taskExecutor")
-    public void analyzeClothes(ClothesRequestDto dto) {
+    public void analyzeClothes(ClothesRequestDto dto, User user) {
         try {
             log.info("🤖 [비동기] 옷 분석 및 DB 매핑 시작...");
 
             // 상의(Top)
             if (dto.getTop() != null && !dto.getTop().isEmpty()) {
-                analyzeAndSaveClothesSync(dto.getTop(), "Top");
+                analyzeAndSaveClothesSync(dto.getTop(), "Top", user);
             }
             // 하의(Bottom)
             if (dto.getBottom() != null && !dto.getBottom().isEmpty()) {
-                analyzeAndSaveClothesSync(dto.getBottom(), "Bottom");
+                analyzeAndSaveClothesSync(dto.getBottom(), "Bottom", user);
             }
             // 신발(Shoes)
             if (dto.getShoes() != null && !dto.getShoes().isEmpty()) {
-                analyzeAndSaveClothesSync(dto.getShoes(), "Shoes");
+                analyzeAndSaveClothesSync(dto.getShoes(), "Shoes", user);
             }
 
             log.info("🎉 [비동기] 분석 종료!");
@@ -310,9 +311,9 @@ public class ClothesAnalysisService {
      * @return 저장된 Clothes 엔티티의 ID
      */
     @Transactional
-    public Long analyzeAndSaveClothes(byte[] imageBytes, String filename, String category) throws IOException {
+    public Long analyzeAndSaveClothes(byte[] imageBytes, String filename, String category, User user) throws IOException {
         log.info("🤖 [동기] 옷 분석 시작 - category: {}, filename: {}", category, filename);
-        return analyzeAndSaveClothesInternal(imageBytes, filename, category);
+        return analyzeAndSaveClothesInternal(imageBytes, filename, category, user);
     }
 
     /**
@@ -324,9 +325,9 @@ public class ClothesAnalysisService {
      * @return 저장된 Clothes 엔티티의 ID
      */
     @Transactional
-    public Long analyzeAndSaveClothesSync(MultipartFile file, String category) throws IOException {
+    public Long analyzeAndSaveClothesSync(MultipartFile file, String category, User user) throws IOException {
         log.info("🤖 [동기] 옷 분석 시작 - category: {}, filename: {}", category, file.getOriginalFilename());
-        return analyzeAndSaveClothesInternal(file, category);
+        return analyzeAndSaveClothesInternal(file, category, user);
     }
 
     // ============================================
@@ -337,15 +338,15 @@ public class ClothesAnalysisService {
      * 옷 분석 및 저장 내부 로직 - MultipartFile 버전
      * byte[] 버전으로 변환하여 호출
      */
-    private Long analyzeAndSaveClothesInternal(MultipartFile file, String category) throws IOException {
-        return analyzeAndSaveClothesInternal(file.getBytes(), file.getOriginalFilename(), category);
+    private Long analyzeAndSaveClothesInternal(MultipartFile file, String category, User user) throws IOException {
+        return analyzeAndSaveClothesInternal(file.getBytes(), file.getOriginalFilename(), category, user);
     }
 
     /**
      * 옷 분석 및 저장 내부 로직 - byte[] 버전 (실제 분석 로직)
      * Google Vision API를 사용하여 이미지 분석 후 DB에 저장
      */
-    private Long analyzeAndSaveClothesInternal(byte[] imageBytes, String filename, String category) throws IOException {
+    private Long analyzeAndSaveClothesInternal(byte[] imageBytes, String filename, String category, User user) throws IOException {
 
         // [Step 1] 구글 AI에게 물어보기
         List<String> tags = googleVisionService.extractLabels(imageBytes);
@@ -484,6 +485,7 @@ public class ClothesAnalysisService {
 
         // [Step 9] DB 저장 (한글로 저장)
         Clothes clothes = Clothes.builder()
+                .user(user)
                 .category(category)
                 .name(autoName)
                 .imgUrl(imgUrl)
