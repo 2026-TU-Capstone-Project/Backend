@@ -19,11 +19,7 @@ public class FittingTask {
     @Column(name = "user_id")
     private Long userId; // 유저ID
 
-    /**
-     * 유저 엔티티 연관관계 (읽기 전용)
-     * FK 컬럼은 userId 를 그대로 사용하고,
-     * 기존 로직을 건드리지 않기 위해 insertable / updatable 은 false 로 둡니다.
-     */
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(
             name = "user_id",
