@@ -401,17 +401,22 @@ public class GeminiService {
 	}
 	public VirtualFittingResponse processVirtualFitting(byte[] userImageBytes, byte[] topImageBytes, byte[] bottomImageBytes, String positivePrompt, String negativePrompt, String resolution) {
 		try {
+			// 최소 하나는 필요 (컨트롤러에서 검증하지만 이중 체크)
+			if (topImageBytes == null && bottomImageBytes == null) {
+				throw new BadRequestException("At least one of top_image or bottom_image is required");
+			}
+			
 			// 1. 이미지 리사이징 (이미 구현된 메서드 활용)
 			byte[] resUser = resizeImageIfNeeded(userImageBytes);
-			byte[] resTop = resizeImageIfNeeded(topImageBytes);
-			byte[] resBottom = resizeImageIfNeeded(bottomImageBytes);
+			byte[] resTop = topImageBytes != null ? resizeImageIfNeeded(topImageBytes) : null;
+			byte[] resBottom = bottomImageBytes != null ? resizeImageIfNeeded(bottomImageBytes) : null;
 
 			// 2. 형(동료)이 아래쪽에 짜놓은 진짜 요청 본문 생성기 호출! (중요)
 			// 형님 파일 아래쪽에 있는 'createGeminiRequestBody' 메서드를 그대로 씁니다.
 			Map<String, Object> requestBody = createGeminiRequestBody(
 					Base64.getEncoder().encodeToString(resUser),
-					Base64.getEncoder().encodeToString(resTop),
-					Base64.getEncoder().encodeToString(resBottom),
+					resTop != null ? Base64.getEncoder().encodeToString(resTop) : null,
+					resBottom != null ? Base64.getEncoder().encodeToString(resBottom) : null,
 					positivePrompt, negativePrompt
 			);
 
@@ -516,10 +521,14 @@ public class GeminiService {
 		Map<String, Object> content = new HashMap<>();
 		List<Map<String, Object>> parts = new ArrayList<>();
 
-		// 1. 이미지 데이터 3장 추가
+		// 1. 이미지 데이터 추가 (null이 아닌 것만)
 		addInlineData(parts, userImg);
-		addInlineData(parts, topImg);
-		addInlineData(parts, bottomImg);
+		if (topImg != null) {
+			addInlineData(parts, topImg);
+		}
+		if (bottomImg != null) {
+			addInlineData(parts, bottomImg);
+		}
 
 		// 2. 프롬프트 추가 (이게 빠져서 400 에러가 났던 겁니다!)
 		Map<String, Object> textPart = new HashMap<>();
