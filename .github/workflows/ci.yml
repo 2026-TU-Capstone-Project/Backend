@@ -47,6 +47,17 @@ jobs:
 
       - run: chmod +x gradlew
 
+      - name: Create resources directory and application.properties
+        run: |
+          mkdir -p src/main/resources
+          cat <<EOF > src/main/resources/application.properties
+          spring.datasource.url=${{ secrets.SPRING_DATASOURCE_URL || 'jdbc:mysql://localhost:3306/' }}${{ secrets.MYSQL_DATABASE }}
+          spring.datasource.username=${{ secrets.MYSQL_USER }}
+          spring.datasource.password=${{ secrets.MYSQL_PASSWORD }}
+          spring.data.redis.host=localhost
+          spring.data.redis.port=6379
+          EOF
+
       - name: Build
         run: ./gradlew build -x test
         env:
