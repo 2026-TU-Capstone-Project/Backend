@@ -30,10 +30,15 @@ public class GoogleVisionService {
     }
 
     private ImageAnnotatorSettings getSettings() {
-        return ImageAnnotatorSettings.newBuilder()
-                .setCredentialsProvider(FixedCredentialsProvider.create(googleCredentials))
-                .build();
+        try {
+            return ImageAnnotatorSettings.newBuilder()
+                    .setCredentialsProvider(FixedCredentialsProvider.create(googleCredentials))
+                    .build();
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to create ImageAnnotatorSettings", e);
+        }
     }
+    
 
     // 1. 태그 추출 (기존 기능)
     public List<String> extractLabels(MultipartFile file) throws IOException {
