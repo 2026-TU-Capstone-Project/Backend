@@ -36,8 +36,13 @@ public class GoogleVisionService {
 
     // 1. 태그 추출 (기존 기능)
     public List<String> extractLabels(MultipartFile file) throws IOException {
+        return extractLabels(file.getBytes());
+    }
+
+    // 1-1. 태그 추출 (byte[] 버전)
+    public List<String> extractLabels(byte[] imageBytes) throws IOException {
         List<AnnotateImageRequest> requests = new ArrayList<>();
-        ByteString imgBytes = ByteString.copyFrom(file.getBytes());
+        ByteString imgBytes = ByteString.copyFrom(imageBytes);
         Image image = Image.newBuilder().setContent(imgBytes).build();
 
         Feature feature = Feature.newBuilder().setType(Feature.Type.LABEL_DETECTION).build();
@@ -71,8 +76,13 @@ public class GoogleVisionService {
 
     // 2. 색깔 추출 (기존 기능 유지)
     public String extractDominantColor(MultipartFile file) throws IOException {
+        return extractDominantColor(file.getBytes());
+    }
+
+    // 2-1. 색깔 추출 (byte[] 버전)
+    public String extractDominantColor(byte[] imageBytes) throws IOException {
         List<AnnotateImageRequest> requests = new ArrayList<>();
-        ByteString imgBytes = ByteString.copyFrom(file.getBytes());
+        ByteString imgBytes = ByteString.copyFrom(imageBytes);
         Image image = Image.newBuilder().setContent(imgBytes).build();
 
         Feature feature = Feature.newBuilder().setType(Feature.Type.IMAGE_PROPERTIES).build();

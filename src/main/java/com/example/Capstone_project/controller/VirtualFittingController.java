@@ -1,8 +1,13 @@
 package com.example.Capstone_project.controller;
 
 import com.example.Capstone_project.common.dto.ApiResponse;
-import com.example.Capstone_project.dto.VirtualFittingResponse;
-import com.example.Capstone_project.service.GeminiService;
+import com.example.Capstone_project.domain.FittingStatus;
+import com.example.Capstone_project.domain.FittingTask;
+import com.example.Capstone_project.dto.VirtualFittingStatusResponse;
+import com.example.Capstone_project.dto.VirtualFittingTaskIdResponse;
+import com.example.Capstone_project.service.ClothesAnalysisService;
+import com.example.Capstone_project.service.FittingService;
+import com.example.Capstone_project.service.GoogleCloudStorageService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -22,6 +27,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.File;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -37,16 +43,13 @@ import java.nio.file.Paths;
 @RequiredArgsConstructor
 public class VirtualFittingController {
 	
-	private final GeminiService geminiService;
+	private final FittingService fittingService;
+	private final ClothesAnalysisService clothesAnalysisService;
+	private final GoogleCloudStorageService gcsService;
 	
 	@Value("${virtual-fitting.image.storage-path:./images/virtual-fitting}")
 	private String imageStoragePath;
-	
-	/**
-	 * Virtual Fitting 요청 처리
-	 * 신체 사진, 상의, 하의를 받아서 결과 이미지를 생성
-	 * 상의와 하의를 동시에 자연스럽게 합성
-	 */
+
 	@Operation(
 		summary = "가상 피팅 요청",
 		description = "신체 사진, 상의, 하의 이미지를 받아서 가상 피팅 결과 이미지를 생성합니다. " +
@@ -54,12 +57,8 @@ public class VirtualFittingController {
 	)
 	@ApiResponses(value = {
 		@io.swagger.v3.oas.annotations.responses.ApiResponse(
-			responseCode = "201",
-			description = "가상 피팅 성공",
-			content = @Content(
-				mediaType = MediaType.APPLICATION_JSON_VALUE,
-				schema = @Schema(implementation = ApiResponse.class)
-			)
+			responseCode = "202",
+			description = "가상 피팅 요청 접수 (비동기 처리 시작)"
 		),
 		@io.swagger.v3.oas.annotations.responses.ApiResponse(
 			responseCode = "400",
@@ -71,30 +70,24 @@ public class VirtualFittingController {
 		)
 	})
 	@PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-	public ResponseEntity<ApiResponse<VirtualFittingResponse>> createVirtualFitting(
+	public ResponseEntity<ApiResponse<VirtualFittingTaskIdResponse>> createVirtualFitting(
 		@Parameter(description = "신체 사진 (필수)", required = true)
 		@RequestParam("user_image") MultipartFile userImage,
 		
-		@Parameter(description = "상의 사진 (필수)", required = true)
-		@RequestParam("top_image") MultipartFile topImage,
+		@Parameter(description = "상의 사진 (선택)", required = false)
+		@RequestParam(value = "top_image", required = false) MultipartFile topImage,
 		
-		@Parameter(description = "하의 사진 (필수)", required = true)
-		@RequestParam("bottom_image") MultipartFile bottomImage,
+		@Parameter(description = "하의 사진 (선택)", required = false)
+		@RequestParam(value = "bottom_image", required = false) MultipartFile bottomImage,
 		
-		@Parameter(description = "긍정적 프롬프트 (선택, 기본값: application.properties에서 설정)")
-		@RequestParam(value = "positive_prompt", required = false) String positivePrompt,
-		
-		@Parameter(description = "제외 프롬프트 (선택, 기본값: application.properties에서 설정)")
-		@RequestParam(value = "negative_prompt", required = false) String negativePrompt,
-		
-		@Parameter(description = "해상도 (선택, 기본값: standard)")
-		@RequestParam(value = "resolution", required = false) String resolution
+		@Parameter(description = "사용자 ID (선택)")
+		@RequestParam(value = "user_id", required = false) Long userId
 	) {
-		log.info("Virtual Fitting request received - userImage: {}, topImage: {}, bottomImage: {}, resolution: {}",
-			userImage.getOriginalFilename(),
-			topImage.getOriginalFilename(),
-			bottomImage.getOriginalFilename(),
-			resolution != null ? resolution : "default"
+		log.info("Virtual Fitting request received - userImage: {}, topImage: {}, bottomImage: {}, userId: {}",
+			userImage != null ? userImage.getOriginalFilename() : "null",
+			topImage != null ? topImage.getOriginalFilename() : "null",
+			bottomImage != null ? bottomImage.getOriginalFilename() : "null",
+			userId
 		);
 		
 		// 파일 유효성 검사
@@ -103,76 +96,76 @@ public class VirtualFittingController {
 				.body(ApiResponse.error("User image is required"));
 		}
 		
-		if (topImage.isEmpty()) {
-			return ResponseEntity.badRequest()
-				.body(ApiResponse.error("Top image is required"));
-		}
+		// 상의와 하의 중 최소 하나는 필요
+		boolean hasTop = topImage != null && !topImage.isEmpty();
+		boolean hasBottom = bottomImage != null && !bottomImage.isEmpty();
 		
-		if (bottomImage.isEmpty()) {
+		if (!hasTop && !hasBottom) {
 			return ResponseEntity.badRequest()
-				.body(ApiResponse.error("Bottom image is required"));
+				.body(ApiResponse.error("At least one of top_image or bottom_image is required"));
 		}
 		
 		try {
-			VirtualFittingResponse response = geminiService.processVirtualFitting(
-				userImage,
-				topImage,
-				bottomImage,
-				positivePrompt,
-				negativePrompt,
-				resolution
+			// 1. 이미지를 byte[]로 변환
+			byte[] userImageBytes = userImage.getBytes();
+			byte[] topImageBytes = hasTop ? topImage.getBytes() : null;
+			byte[] bottomImageBytes = hasBottom ? bottomImage.getBytes() : null;
+			
+			String topImageFilename = hasTop ? topImage.getOriginalFilename() : null;
+			String bottomImageFilename = hasBottom ? bottomImage.getOriginalFilename() : null;
+			
+			// 2. FittingTask 생성 (bodyImgUrl은 가상 피팅 완료 후 저장됨)
+			FittingTask task = fittingService.createFittingTask(userId, null);
+			log.info("✅ FittingTask 생성 완료 - ID: {}", task.getId());
+			
+			// 3. 비동기 처리 - 가상 피팅 작업 시작 (백그라운드에서 진행)
+			fittingService.processVirtualFittingWithClothesAnalysis(
+				task.getId(),
+				userImageBytes,
+				userImage.getOriginalFilename(),
+				topImageBytes,
+				topImageFilename,
+				bottomImageBytes,
+				bottomImageFilename,
+				clothesAnalysisService
 			);
 			
-			return ResponseEntity.status(HttpStatus.CREATED)
-				.body(ApiResponse.success("Virtual fitting completed successfully", response));
+			log.info("🚀 가상 피팅 작업 시작됨 - Task ID: {} (백그라운드에서 처리 중입니다)", task.getId());
 			
+			VirtualFittingTaskIdResponse body = new VirtualFittingTaskIdResponse(task.getId());
+			return ResponseEntity.status(HttpStatus.ACCEPTED)
+				.body(ApiResponse.success("가상 피팅 요청 성공", body));
+			
+		} catch (IOException e) {
+			log.error("Error reading image files", e);
+			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+				.body(ApiResponse.error("Failed to read image files: " + e.getMessage()));
 		} catch (Exception e) {
 			log.error("Error processing virtual fitting request", e);
-			// GlobalExceptionHandler가 처리하지만, 여기서도 로깅
 			throw e;
 		}
 	}
-	
-	/**
-	 * 가상 피팅 결과 이미지 다운로드
-	 * 저장된 이미지 파일을 HTTP 응답으로 제공
-	 */
+
+
 	@Operation(
-		summary = "가상 피팅 결과 이미지 조회",
-		description = "생성된 가상 피팅 결과 이미지를 조회합니다."
+		summary = "가상 피팅 작업 상태 조회",
+		description = "가상 피팅 작업의 현재 상태를 조회합니다."
 	)
-	@GetMapping("/images/{filename}")
-	public ResponseEntity<Resource> getVirtualFittingImage(
-		@Parameter(description = "이미지 파일명", required = true)
-		@PathVariable String filename
+	@GetMapping("/status/{taskId}")
+	public ResponseEntity<ApiResponse<VirtualFittingStatusResponse>> getFittingStatus(
+		@Parameter(description = "작업 ID", required = true)
+		@PathVariable Long taskId
 	) {
-		try {
-			Path filePath = Paths.get(imageStoragePath).resolve(filename);
-			File file = filePath.toFile();
-			
-			if (!file.exists() || !file.isFile()) {
-				log.warn("Image file not found: {}", filePath.toAbsolutePath());
-				return ResponseEntity.notFound().build();
-			}
-			
-			Resource resource = new FileSystemResource(file);
-			
-			// MIME 타입 결정
-			String contentType = Files.probeContentType(filePath);
-			if (contentType == null) {
-				contentType = "application/octet-stream";
-			}
-			
-			log.debug("Serving image file: {} (contentType: {})", filePath.toAbsolutePath(), contentType);
-			
-			return ResponseEntity.ok()
-				.contentType(MediaType.parseMediaType(contentType))
-				.header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + filename + "\"")
-				.body(resource);
-				
-		} catch (Exception e) {
-			log.error("Error serving image file: {}", filename, e);
-			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+		FittingTask task = fittingService.checkStatus(taskId);
+		if (task == null) {
+			return ResponseEntity.status(HttpStatus.NOT_FOUND)
+				.body(ApiResponse.error("Fitting task not found: " + taskId));
 		}
+		VirtualFittingStatusResponse body = new VirtualFittingStatusResponse(
+			task.getId(),
+			task.getStatus(),
+			task.getResultImgUrl()
+		);
+		return ResponseEntity.ok(ApiResponse.success("Fitting task status retrieved", body));
 	}
 }

@@ -53,3 +53,4 @@ Thumbs.db
 src/main/resources/application.properties
 src/main/resources/application-secret.properties
 *.properties
+google-key.json

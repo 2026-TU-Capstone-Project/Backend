@@ -48,13 +48,20 @@ public class GeminiService {
 	
 
 	private final WebClient geminiWebClient;
+	private final GoogleCloudStorageService gcsService;
 	private final ObjectMapper objectMapper = new ObjectMapper();
 
 	@Value("${gemini.api.key}")
 	private String geminiApiKey;
 
+	@Value("${gemini.api.base-url:https://generativelanguage.googleapis.com/v1beta}")
+	private String geminiBaseUrl;
+
 	@Value("${gemini.api.model:gemini-3-pro-image-preview}")
 	private String model;
+	
+	@Value("${gemini.api.analysis-model}")
+	private String analysisModel;
 	
 	@Value("${gemini.prompt.positive:Put the provided top and bottom garments on the person in the full-body photo.}")
 	private String defaultPositivePrompt;
@@ -132,40 +139,17 @@ public class GeminiService {
 	}
 	
 	/**
-	 * Base64 이미지 데이터를 파일로 저장하고 URL 반환
+	 * Base64 이미지 데이터를 GCS에 저장하고 공개 URL 반환
 	 */
 	private String saveBase64ImageToFile(String imageBase64, String mimeType) throws IOException {
-		// 저장 디렉토리 생성
-		Path storageDir = Paths.get(imageStoragePath);
-		if (!Files.exists(storageDir)) {
-			Files.createDirectories(storageDir);
-			log.info("Created image storage directory: {}", storageDir.toAbsolutePath());
-		}
+		// GCS에 업로드 (MIME 타입이 없으면 기본값으로 image/jpeg 사용)
+		String contentType = mimeType != null ? mimeType : "image/jpeg";
+		String gcsUrl = gcsService.uploadBase64Image(imageBase64, contentType);
 		
-		// 파일 확장자 결정
-		String extension = "jpg";
-		if (mimeType != null) {
-			if (mimeType.contains("png")) {
-				extension = "png";
-			} else if (mimeType.contains("jpeg") || mimeType.contains("jpg")) {
-				extension = "jpg";
-			}
-		}
+		log.info("✅ 이미지 GCS 업로드 완료 - URL: {}", gcsUrl);
 		
-		// 고유한 파일명 생성
-		String filename = UUID.randomUUID().toString() + "." + extension;
-		Path filePath = storageDir.resolve(filename);
-		
-		// Base64 디코딩 및 파일 저장
-		byte[] imageBytes = Base64.getDecoder().decode(imageBase64);
-		try (FileOutputStream fos = new FileOutputStream(filePath.toFile())) {
-			fos.write(imageBytes);
-		}
-		
-		log.info("Image saved to: {} ({} bytes)", filePath.toAbsolutePath(), imageBytes.length);
-		
-		// URL 경로 반환 (파일명만 포함)
-		return imageUrlPath + "/" + filename;
+		// GCS 공개 URL 반환
+		return gcsUrl;
 	}
 	
 	/**
@@ -417,17 +401,22 @@ public class GeminiService {
 	}
 	public VirtualFittingResponse processVirtualFitting(byte[] userImageBytes, byte[] topImageBytes, byte[] bottomImageBytes, String positivePrompt, String negativePrompt, String resolution) {
 		try {
+			// 최소 하나는 필요 (컨트롤러에서 검증하지만 이중 체크)
+			if (topImageBytes == null && bottomImageBytes == null) {
+				throw new BadRequestException("At least one of top_image or bottom_image is required");
+			}
+			
 			// 1. 이미지 리사이징 (이미 구현된 메서드 활용)
 			byte[] resUser = resizeImageIfNeeded(userImageBytes);
-			byte[] resTop = resizeImageIfNeeded(topImageBytes);
-			byte[] resBottom = resizeImageIfNeeded(bottomImageBytes);
+			byte[] resTop = topImageBytes != null ? resizeImageIfNeeded(topImageBytes) : null;
+			byte[] resBottom = bottomImageBytes != null ? resizeImageIfNeeded(bottomImageBytes) : null;
 
 			// 2. 형(동료)이 아래쪽에 짜놓은 진짜 요청 본문 생성기 호출! (중요)
 			// 형님 파일 아래쪽에 있는 'createGeminiRequestBody' 메서드를 그대로 씁니다.
 			Map<String, Object> requestBody = createGeminiRequestBody(
 					Base64.getEncoder().encodeToString(resUser),
-					Base64.getEncoder().encodeToString(resTop),
-					Base64.getEncoder().encodeToString(resBottom),
+					resTop != null ? Base64.getEncoder().encodeToString(resTop) : null,
+					resBottom != null ? Base64.getEncoder().encodeToString(resBottom) : null,
 					positivePrompt, negativePrompt
 			);
 
@@ -532,10 +521,14 @@ public class GeminiService {
 		Map<String, Object> content = new HashMap<>();
 		List<Map<String, Object>> parts = new ArrayList<>();
 
-		// 1. 이미지 데이터 3장 추가
+		// 1. 이미지 데이터 추가 (null이 아닌 것만)
 		addInlineData(parts, userImg);
-		addInlineData(parts, topImg);
-		addInlineData(parts, bottomImg);
+		if (topImg != null) {
+			addInlineData(parts, topImg);
+		}
+		if (bottomImg != null) {
+			addInlineData(parts, bottomImg);
+		}
 
 		// 2. 프롬프트 추가 (이게 빠져서 400 에러가 났던 겁니다!)
 		Map<String, Object> textPart = new HashMap<>();
@@ -565,6 +558,115 @@ public class GeminiService {
 		inlineData.put("data", base64Data);
 		part.put("inline_data", inlineData);
 		parts.add(part);
+	}
+
+	/**
+	 * Gemini API를 사용하여 이미지 스타일 분석
+	 * 이미지와 프롬프트를 전송하여 텍스트 분석 결과를 받아옴
+	 * 
+	 * @param imageBytes 분석할 이미지 바이트 배열
+	 * @param prompt 분석 프롬프트
+	 * @return 분석 결과 텍스트 (한글)
+	 */
+	public String analyzeImageStyle(byte[] imageBytes, String prompt) {
+		try {
+			log.info("🎨 Gemini API로 이미지 스타일 분석 시작 - 모델: {}", analysisModel);
+			
+			// 이미지를 Base64로 인코딩
+			String imageBase64 = Base64.getEncoder().encodeToString(imageBytes);
+			String mimeType = "image/jpeg";
+			
+			// Gemini API 요청 생성
+			List<GeminiGenerateContentRequest.Part> parts = new ArrayList<>();
+			
+			// 이미지 추가
+			parts.add(GeminiGenerateContentRequest.Part.builder()
+				.inlineData(GeminiGenerateContentRequest.InlineData.builder()
+					.mimeType(mimeType)
+					.data(imageBase64)
+					.build())
+				.build());
+			
+			// 프롬프트 추가
+			parts.add(GeminiGenerateContentRequest.Part.builder()
+				.text(prompt)
+				.build());
+			
+			// Content 생성
+			GeminiGenerateContentRequest.Content content = 
+				GeminiGenerateContentRequest.Content.builder()
+					.parts(parts)
+					.build();
+			
+			List<GeminiGenerateContentRequest.Content> contents = new ArrayList<>();
+			contents.add(content);
+			
+			// 최종 요청 객체 생성 (GenerationConfig 없이 - 텍스트 응답만 필요)
+			GeminiGenerateContentRequest request = GeminiGenerateContentRequest.builder()
+				.contents(contents)
+				.build();
+			
+			// Gemini API 호출
+			// v1beta 대신 v1 사용 (더 안정적)
+			String endpoint = "/models/" + analysisModel + ":generateContent";
+			log.info("📡 Gemini API 호출 - 엔드포인트: {}, 모델: {}", endpoint, analysisModel);
+			
+			GeminiGenerateContentResponse response = geminiWebClient.post()
+				.uri(endpoint)
+				.contentType(MediaType.APPLICATION_JSON)
+				.bodyValue(request)
+				.retrieve()
+				.bodyToMono(GeminiGenerateContentResponse.class)
+				.block();
+			
+			if (response == null || response.getCandidates() == null || response.getCandidates().isEmpty()) {
+				log.error("Gemini API 분석 응답이 null이거나 비어있음");
+				throw new BadRequestException("No response from Gemini API for style analysis");
+			}
+			
+			// 응답에서 텍스트 추출
+			GeminiGenerateContentResponse.Candidate candidate = response.getCandidates().get(0);
+			if (candidate.getContent() == null || candidate.getContent().getParts() == null) {
+				log.error("Gemini API 응답에 content 또는 parts가 없음");
+				throw new BadRequestException("Invalid response from Gemini API for style analysis");
+			}
+			
+			// parts에서 텍스트 데이터 찾기
+			StringBuilder analysisText = new StringBuilder();
+			for (GeminiGenerateContentResponse.Part part : candidate.getContent().getParts()) {
+				if (part.getText() != null && !part.getText().trim().isEmpty()) {
+					analysisText.append(part.getText().trim());
+				}
+			}
+			
+			if (analysisText.length() == 0) {
+				log.warn("Gemini API 응답에 텍스트가 없음");
+				return "스타일 분석 결과를 받을 수 없습니다.";
+			}
+			
+			String result = analysisText.toString();
+			log.info("✅ Gemini API 스타일 분석 완료 - 결과 길이: {} 문자", result.length());
+			log.debug("분석 결과: {}", result.substring(0, Math.min(200, result.length())));
+			
+			return result;
+			
+		} catch (WebClientResponseException e) {
+			String responseBody = e.getResponseBodyAsString();
+			log.error("❌ Gemini API 스타일 분석 실패 - Status: {}, Response: {}, Model: {}", 
+				e.getStatusCode(), responseBody, analysisModel, e);
+			
+			// 404 오류인 경우 더 자세한 정보 로깅
+			if (e.getStatusCode().value() == 404) {
+				log.error("⚠️ 모델을 찾을 수 없습니다. 모델 이름 확인 필요: {}", analysisModel);
+				log.error("⚠️ API Base URL: {}", geminiBaseUrl);
+				log.error("⚠️ 전체 엔드포인트: {}/models/{}:generateContent", geminiBaseUrl, analysisModel);
+			}
+			
+			throw new BadRequestException("Failed to analyze image style with Gemini API: " + e.getMessage());
+		} catch (Exception e) {
+			log.error("❌ Gemini API 스타일 분석 중 예외 발생", e);
+			throw new BadRequestException("Error analyzing image style: " + e.getMessage());
+		}
 	}
 
 }
