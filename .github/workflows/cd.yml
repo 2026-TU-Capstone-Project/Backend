@@ -1,0 +1,29 @@
+# CD: Push to main/develop 시 GCP VM에서 git pull 후 Docker 재빌드·재기동
+# 배포 경로: /home/ehddk0618/Backend (root@capstone-project), docker compose
+# 필수 GitHub Secrets: DEPLOY_HOST, DEPLOY_USER, SSH_PRIVATE_KEY
+# VM: repo 클론되어 있어야 함. private repo면 VM에 deploy key 설정 필요.
+
+name: CD
+
+on:
+  push:
+    branches: [ main, develop ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to GCP VM (git pull + docker compose)
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          script: |
+            cd /home/ehddk0618/Backend
+            git fetch origin
+            git checkout ${{ github.ref_name }}
+            git pull origin ${{ github.ref_name }}
+            docker compose build --no-cache app
+            docker compose up -d
