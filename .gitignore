@@ -42,6 +42,7 @@ out/
 .env
 *.properties
 !gradle-wrapper.properties
+!src/test/resources/application-test.properties
 
 ### Docker ###
 *.log
@@ -53,4 +54,5 @@ Thumbs.db
 src/main/resources/application.properties
 src/main/resources/application-secret.properties
 *.properties
+!src/test/resources/application-test.properties
 google-key.json

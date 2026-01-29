@@ -1,5 +1,6 @@
 package com.example.Capstone_project.service;
 
+import com.google.api.gax.core.FixedCredentialsProvider;
 import com.google.auth.oauth2.GoogleCredentials;
 import com.google.cloud.vision.v1.AnnotateImageRequest;
 import com.google.cloud.vision.v1.AnnotateImageResponse;
@@ -9,30 +10,35 @@ import com.google.cloud.vision.v1.Feature;
 import com.google.cloud.vision.v1.Image;
 import com.google.cloud.vision.v1.ImageAnnotatorClient;
 import com.google.cloud.vision.v1.ImageAnnotatorSettings;
-import com.google.api.gax.core.FixedCredentialsProvider;
 import com.google.protobuf.ByteString;
-import org.springframework.core.io.ClassPathResource;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 
 @Service
+@Profile("!test")
 public class GoogleVisionService {
 
-    // 🔑 핵심: 코드가 직접 리소스 폴더의 키 파일을 찾아옵니다!
-    private ImageAnnotatorSettings getSettings() throws IOException {
-        // src/main/resources/google-key.json 파일을 읽음
-        InputStream keyStream = new ClassPathResource("google-key.json").getInputStream();
-        GoogleCredentials credentials = GoogleCredentials.fromStream(keyStream);
+    private final GoogleCredentials googleCredentials;
 
-        return ImageAnnotatorSettings.newBuilder()
-                .setCredentialsProvider(FixedCredentialsProvider.create(credentials))
-                .build();
+    public GoogleVisionService(GoogleCredentials googleCredentials) {
+        this.googleCredentials = googleCredentials;
     }
+
+    private ImageAnnotatorSettings getSettings() {
+        try {
+            return ImageAnnotatorSettings.newBuilder()
+                    .setCredentialsProvider(FixedCredentialsProvider.create(googleCredentials))
+                    .build();
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to create ImageAnnotatorSettings", e);
+        }
+    }
+    
 
     // 1. 태그 추출 (기존 기능)
     public List<String> extractLabels(MultipartFile file) throws IOException {
