@@ -1,12 +1,17 @@
--- 1. 데이터베이스가 없다면 생성 (보통 환경변수로 자동생성되지만 명시하는 게 안전함)
+-- 1. 데이터베이스가 없으면 생성
 CREATE DATABASE IF NOT EXISTS capstone_db;
 
--- 1. 외부 접속(DBeaver)용 권한 부여
+-- 2. 유저가 없으면 생성 (비밀번호 없음)
+-- MySQL 5.7+ / 8.0+ 공용 문법
+CREATE USER IF NOT EXISTS 'capstone_user'@'%'
+CREATE USER IF NOT EXISTS 'capstone_user'@'localhost' 
+
+-- 3. 권한 부여
 GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, DROP 
 ON capstone_db.* TO 'capstone_user'@'%';
 
--- 2. 내부 접속(서버 앱)용 권한 부여 (이 줄이 빠져서 에러가 난 것입니다!)
 GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, DROP 
 ON capstone_db.* TO 'capstone_user'@'localhost';
 
+-- 4. 변경 사항 적용
 FLUSH PRIVILEGES;
