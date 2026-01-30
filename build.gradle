@@ -35,12 +35,7 @@ dependencies {
 	// SpringDoc OpenAPI (Swagger)
 	// Spring Boot 4.0.x / Spring Framework 6.2+ 호환을 위한 최신 버전
 	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.0'
-	implementation 'com.google.cloud:google-cloud-vision:3.18.0'
 	implementation 'com.google.cloud:google-cloud-storage:2.40.0'
-	// gRPC 및 Protobuf 관련 (옷 분석 서비스용)
-	implementation 'io.grpc:grpc-netty-shaded:1.62.2'
-	implementation 'io.grpc:grpc-protobuf:1.62.2'
-	implementation 'io.grpc:grpc-stub:1.62.2'
 	compileOnly 'org.apache.tomcat:annotations-api:6.0.53' // 빌드 시 필요
 	compileOnly 'org.projectlombok:lombok'
 	implementation 'io.jsonwebtoken:jjwt-api:0.11.5'

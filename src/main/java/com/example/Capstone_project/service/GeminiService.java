@@ -659,5 +659,28 @@ public class GeminiService {
 			throw new BadRequestException("Error analyzing image style: " + e.getMessage());
 		}
 	}
+	/**
+	 * [추가] Gemini API를 사용하여 옷 이미지 상세 분석 (JSON 변환 포함)
+	 */
+	public ClothesAnalysisResultDto analyzeClothesImage(byte[] imageBytes, String prompt) {
+		try {
+			// 1. 기존 analyzeImageStyle 로직을 활용해 텍스트 응답(JSON 문자열)을 받습니다.
+			String jsonResponse = analyzeImageStyle(imageBytes, prompt);
+
+			// 2. 만약 응답에 마크다운 기호(```json ... ```)가 섞여 있다면 제거합니다.
+			String cleanJson = jsonResponse.replaceAll("```json", "").replaceAll("```", "").trim();
+
+			// 3. Jackson ObjectMapper를 사용해 JSON 문자열을 DTO 객체로 바로 변환합니다!
+			return objectMapper.readValue(cleanJson, ClothesAnalysisResultDto.class);
+
+		} catch (Exception e) {
+			log.error("❌ Gemini JSON 파싱 실패. 기본 객체를 반환합니다: {}", e.getMessage());
+			// 파싱 실패 시 에러 방지를 위해 빈 객체라도 반환
+			ClothesAnalysisResultDto fallback = new ClothesAnalysisResultDto();
+			fallback.setCategory("Unknown");
+			fallback.setColor("알 수 없음");
+			return fallback;
+		}
+	}
 
 }

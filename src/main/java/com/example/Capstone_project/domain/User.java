@@ -5,6 +5,8 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.time.LocalDateTime;
 
 @Entity
@@ -24,6 +26,9 @@ public class User {
 
     @Column(nullable = false, length = 30, unique = true)
     private String email;
+
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<Clothes> clothes = new ArrayList<>();
 
     @Column(nullable = false, length = 100)
     private String password;
