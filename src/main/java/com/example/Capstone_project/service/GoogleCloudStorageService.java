@@ -7,15 +7,14 @@ import com.google.cloud.storage.Storage;
 import com.google.cloud.storage.StorageOptions;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.ClassPathResource;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 
-import java.io.IOException;
-import java.io.InputStream;
 import java.util.UUID;
 
 @Slf4j
 @Service
+@Profile("!test")
 public class GoogleCloudStorageService {
 
     private final Storage storage;
@@ -23,23 +22,18 @@ public class GoogleCloudStorageService {
     private final String folderPath;
 
     public GoogleCloudStorageService(
+            GoogleCredentials googleCredentials,
             @Value("${gcs.bucket-name:tu-capstone-project}") String bucketName,
             @Value("${gcs.folder-path:virtual-fitting-img}") String folderPath,
             @Value("${gcs.project-id:tu-capstone-project}") String projectId
-    ) throws IOException {
+    ) {
         this.bucketName = bucketName;
         this.folderPath = folderPath;
-        
-        // google-key.json 파일을 사용하여 Storage 인스턴스 생성
-        InputStream keyStream = new ClassPathResource("google-key.json").getInputStream();
-        GoogleCredentials credentials = GoogleCredentials.fromStream(keyStream);
-        
         this.storage = StorageOptions.newBuilder()
                 .setProjectId(projectId)
-                .setCredentials(credentials)
+                .setCredentials(googleCredentials)
                 .build()
                 .getService();
-        
         log.info("✅ Google Cloud Storage 초기화 완료 - 버킷: {}, 폴더: {}, 프로젝트: {}", bucketName, folderPath, projectId);
     }
 

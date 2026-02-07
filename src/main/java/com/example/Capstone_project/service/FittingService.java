@@ -17,6 +17,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 
@@ -289,45 +291,69 @@ public class FittingService {
 
         final User dbUser = user;
 
-        try {
-            // 1. 옷 분석 시작 (병렬 처리 - taskExecutor 사용)
-            CompletableFuture<Long> topAnalysisFuture = CompletableFuture.supplyAsync(() -> {
-                try {
-                    log.info("🔄 [비동기] 상의 분석 시작 - Task ID: {}", taskId);
-                    return clothesAnalysisService.analyzeAndSaveClothes(topImageBytes, topImageFilename, "Top", dbUser);
-                } catch (Exception e) {
-                    log.error("❌ 상의 분석 중 오류 발생 - Task ID: {}", taskId, e);
-                    return null;
-                }
-            }, taskExecutor);
 
-            CompletableFuture<Long> bottomAnalysisFuture = CompletableFuture.supplyAsync(() -> {
-                try {
-                    log.info("🔄 [비동기] 하의 분석 시작 - Task ID: {}", taskId);
-                    return clothesAnalysisService.analyzeAndSaveClothes(bottomImageBytes, bottomImageFilename, "Bottom", dbUser);
-                } catch (Exception e) {
-                    log.error("❌ 하의 분석 중 오류 발생 - Task ID: {}", taskId, e);
-                    return null;
-                }
-            }, taskExecutor);
+        try {
+            // 최소 하나는 있어야 함 (컨트롤러에서 검증하지만 이중 체크)
+            if (topImageBytes == null && bottomImageBytes == null) {
+                log.error("❌ 상의와 하의가 모두 없습니다 - Task ID: {}", taskId);
+                updateTaskStatus(taskId, FittingStatus.FAILED);
+                return;
+            }
+
+            // 1. 옷 분석 시작 (병렬 처리 - taskExecutor 사용, null 체크 포함)
+            List<CompletableFuture<Long>> analysisFutures = new ArrayList<>();
+
+            // final 변수로 선언하여 람다에서 안전하게 참조 가능하도록 함
+            final CompletableFuture<Long> topAnalysisFuture;
+            if (topImageBytes != null) {
+                topAnalysisFuture = CompletableFuture.supplyAsync(() -> {
+                    try {
+                        log.info("💎 [비동기] 상의 분석 시작 - Task ID: {}", taskId);
+                        return clothesAnalysisService.analyzeAndSaveClothes(topImageBytes, topImageFilename, "Top", user);
+                    } catch (Exception e) {
+                        log.error("❌ 상의 분석 중 오류 발생 - Task ID: {}", taskId, e);
+                        return null;
+                    }
+                }, taskExecutor);
+                analysisFutures.add(topAnalysisFuture);
+            } else {
+                topAnalysisFuture = CompletableFuture.completedFuture(null);
+            }
+
+            final CompletableFuture<Long> bottomAnalysisFuture;
+            if (bottomImageBytes != null) {
+                bottomAnalysisFuture = CompletableFuture.supplyAsync(() -> {
+                    try {
+                        log.info("💎 [비동기] 하의 분석 시작 - Task ID: {}", taskId);
+                        return clothesAnalysisService.analyzeAndSaveClothes(bottomImageBytes, bottomImageFilename, "Bottom", user);
+                    } catch (Exception e) {
+                        log.error("❌ 하의 분석 중 오류 발생 - Task ID: {}", taskId, e);
+                        return null;
+                    }
+                }, taskExecutor);
+                analysisFutures.add(bottomAnalysisFuture);
+            } else {
+                bottomAnalysisFuture = CompletableFuture.completedFuture(null);
+            }
 
             // 2. 옷 분석 완료 대기 및 가상 피팅 시작 (동일 taskExecutor에서 실행)
-            CompletableFuture.allOf(topAnalysisFuture, bottomAnalysisFuture).thenRunAsync(() -> {
+            CompletableFuture.allOf(analysisFutures.toArray(new CompletableFuture[0])).thenRunAsync(() -> {
                 try {
                     Long topId = topAnalysisFuture.join();
                     Long bottomId = bottomAnalysisFuture.join();
 
-                    if (topId != null && bottomId != null) {
-                        // FittingTask에 옷 ID 연결
+                    // 최소 하나는 성공해야 함
+                    if (topId != null || bottomId != null) {
+                        // FittingTask에 옷 ID 연결 (null일 수 있음)
                         updateFittingTaskClothes(taskId, topId, bottomId);
-                        log.info("✅ FittingTask에 옷 정보 연결 완료 - Task ID: {}, topId: {}, bottomId: {}", 
+                        log.info("✅ FittingTask에 옷 정보 연결 완료 - Task ID: {}, topId: {}, bottomId: {}",
                                 taskId, topId, bottomId);
 
                         // 가상 피팅 처리 시작 (비동기)
                         processFitting(taskId, userImageBytes, userImageFilename, topImageBytes, bottomImageBytes);
                         log.info("🚀 가상 피팅 작업 시작 - Task ID: {}", taskId);
                     } else {
-                        log.error("❌ 옷 분석 실패로 인해 가상 피팅을 시작할 수 없습니다 - Task ID: {}, topId: {}, bottomId: {}", 
+                        log.error("❌ 옷 분석 실패로 인해 가상 피팅을 시작할 수 없습니다 - Task ID: {}, topId: {}, bottomId: {}",
                                 taskId, topId, bottomId);
                         updateTaskStatus(taskId, FittingStatus.FAILED);
                     }
@@ -392,4 +418,6 @@ public class FittingService {
         return fittingRepository.findByUserIdAndIsSavedTrue(userId);
     }
 
+    public void processVirtualFittingWithClothesAnalysis(Long id, byte[] userImageBytes, String userImageFilename, byte[] topImageBytes, String topImageFilename, byte[] bottomImageBytes, String bottomImageFilename, ClothesAnalysisService clothesAnalysisService) {
+    }
 }

@@ -47,6 +47,17 @@ jobs:
 
       - run: chmod +x gradlew
 
+      - name: Create resources directory and application.properties
+        run: |
+          mkdir -p src/main/resources
+          cat <<EOF > src/main/resources/application.properties
+          spring.datasource.url=${{ secrets.SPRING_DATASOURCE_URL || 'jdbc:mysql://localhost:3306/' }}${{ secrets.MYSQL_DATABASE }}
+          spring.datasource.username=${{ secrets.MYSQL_USER }}
+          spring.datasource.password=${{ secrets.MYSQL_PASSWORD }}
+          spring.data.redis.host=localhost
+          spring.data.redis.port=6379
+          EOF
+
       - name: Build
         run: ./gradlew build -x test
         env:
@@ -59,12 +70,7 @@ jobs:
           SPRING_DATA_REDIS_PASSWORD: ""   # 🔹 CI에서는 비밀번호 없음
 
       - name: Test
-        run: ./gradlew test
-        env:
-          SPRING_DATASOURCE_URL: jdbc:mysql://localhost:3306/${{ secrets.MYSQL_DATABASE }}?useSSL=false&serverTimezone=Asia/Seoul&allowPublicKeyRetrieval=true
-          SPRING_DATASOURCE_USERNAME: ${{ secrets.MYSQL_USER }}
-          SPRING_DATASOURCE_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
-
-          SPRING_DATA_REDIS_HOST: localhost
-          SPRING_DATA_REDIS_PORT: 6379
-          SPRING_DATA_REDIS_PASSWORD: ""
+        run: ./gradlew test --stacktrace
+        # Do NOT set SPRING_DATASOURCE_* or SPRING_DATA_REDIS_* here.
+        # Tests use @ActiveProfiles("test") and application-test.properties (H2 in-memory, Redis excluded).
+        # Env vars would override those and force MySQL/Redis, causing DriverDataSource/PersistenceException.
