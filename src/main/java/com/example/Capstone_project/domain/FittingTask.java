@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import com.example.Capstone_project.domain.ClothesSet;
 import java.time.LocalDateTime;
 
 @Entity
@@ -64,6 +65,9 @@ public class FittingTask {
     @Column(name = "body_img_url")
     private String bodyImgUrl; // 전신 사진 이미지 URL
 
+    @Column(name = "is_saved")
+    private boolean isSaved = false; // 기본값은 false (저장 안 함)
+
     // ★ 핵심: 현재 진행 상태
     @Enumerated(EnumType.STRING)
     private FittingStatus status;
@@ -73,6 +77,11 @@ public class FittingTask {
 
     @Column(name = "style_analysis", columnDefinition = "TEXT")
     private String styleAnalysis; // 가상 피팅 결과 이미지의 스타일 분석 (한글 텍스트, 예: "캐주얼한 남성 스타일")
+
+    // 👈 FittingTask.java 파일 맨 아래 } 바로 위에 넣으세요.
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "clothes_set_id")
+    private ClothesSet clothesSet;
 
     // 생성자 (주문 들어왔을 때)
     public FittingTask(FittingStatus status) {

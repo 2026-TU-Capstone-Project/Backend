@@ -57,9 +57,33 @@ cp .env.example .env
 # Windows의 경우
 copy .env.example .env
 ```
+## 사용자 인증 및 권한 시스템
+### 1. 소셜 로그인 연동 (OAuth 2.0)
+- **카카오(Kakao) & 구글(Google) 로그인**
+- **자동 데이터 동기화**
+
+### 2. JWT(JSON Web Token) 기반 인증
+- **Stateless 인증**
+- **보안 입장권**
+
+### 3. API 테스트 가이드 (중요)
+프로젝트 실행 후 아래 순서대로 기능을 테스트할 수 있습니다.
+
+1. **로그인 진입**: 브라우저에서 아래 주소 접속
+   - 카카오: `http://localhost:8080/oauth2/authorization/kakao`
+   - 구글: `http://localhost:8080/oauth2/authorization/google`
+2. **토큰 획득**: 로그인 완료 후 리다이렉트된 Swagger 주소창의 `?token=...` 
+3. **권한 승인**: [Swagger UI](http://localhost:8080/swagger-ui/index.html) 
+4. **기능 확인**: 이후 잠금 표시가 풀린 모든 API를 자유롭게 호출 가능
 
 `.env` 파일의 값들은 프로젝트에 맞게 수정할 수 있습니다. 기본값으로도 동작합니다.
 
+## ⚙️ 환경 설정 (.env)
+다음 값들을 .env 파일에 추가해야 소셜 로그인이 작동합니다.
+
+KAKAO_CLIENT_ID=15ec7d8923c...
+KAKAO_CLIENT_SECRET=y5nI1D0X6M...
+JWT_SECRET_KEY=vmlmZS1zZWNyZXQta2V5LWZvci1jYXBzdG9uZS1wcm9qZWN0LWZpdHRpbmctc2VydmljZQ==
 ## 🚀 실행 방법
 
 ### 처음 시작하기 (초기 설정)

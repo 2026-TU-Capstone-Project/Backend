@@ -15,11 +15,15 @@ public class Clothes {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+
+
     // --- [1. 기본 정보 (Basic)] ---
     private String category;    // Top, Bottom, Shoes (사용자 선택)
     private String name;        // AI가 지어준 이름 (예: 시크한 블랙 라이더 자켓)
     private String imgUrl;      // S3 이미지 주소
-    private String member;      // 사용자 ID (일단 String으로 저장)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", nullable = false) // DB에 user_id라는 이름으로 주인님 번호가 저장됩니다.
+    private User user;
 
     // --- [2. 핵심 스펙 (Key Specs)] ---
     private String color;       // Black, Navy...

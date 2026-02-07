@@ -244,4 +244,17 @@ public class GoogleCloudStorageService {
         
         return gcsUrl.substring(index + prefix.length());
     }
+    public void deleteImage(String blobName) {
+        try {
+            com.google.cloud.storage.BlobId blobId = com.google.cloud.storage.BlobId.of(bucketName, blobName);
+            boolean deleted = storage.delete(blobId);
+            if (deleted) {
+                log.info("✅ GCS 파일 삭제 완료: {}", blobName);
+            } else {
+                log.warn("⚠️ GCS 파일 삭제 실패 (파일 없음): {}", blobName);
+            }
+        } catch (Exception e) {
+            log.error("❌ GCS 파일 삭제 중 에러 발생: {}", e.getMessage());
+        }
+    }
 }
