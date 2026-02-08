@@ -1,22 +1,21 @@
 version: "3.8"
 
 services:
-  mysql:
-    image: mysql:8.0
-    container_name: capstone-mysql
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: capstone-postgres
     restart: always
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE}
-      MYSQL_USER: ${MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
-      - "3306:3306"   # 로컬 접근용
+      - "5432:5432"
     volumes:
-      - mysql_data:/var/lib/mysql
+      - postgres_data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -60,7 +59,7 @@ services:
       LOG_LEVEL_SPRING_WEB: ${LOG_LEVEL_SPRING_WEB}
       LOG_LEVEL_HIBERNATE_SQL: ${LOG_LEVEL_HIBERNATE_SQL}
     depends_on:
-      mysql:
+      postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -68,7 +67,7 @@ services:
       - capstone-network
 
 volumes:
-  mysql_data:
+  postgres_data:
 
 networks:
   capstone-network:

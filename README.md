@@ -1,6 +1,6 @@
 # Capstone Project - Backend
 
-Spring Boot 기반 백엔드 프로젝트입니다. BitStudio AI API를 활용한 Virtual Try-On 기능을 제공하며, Docker 환경에서 MySQL과 Redis와 함께 실행됩니다.
+Spring Boot 기반 백엔드 프로젝트입니다. BitStudio AI API를 활용한 Virtual Try-On 기능을 제공하며, Docker 환경에서 PostgreSQL과 Redis와 함께 실행됩니다.
 
 ## 📋 목차
 
@@ -18,7 +18,7 @@ Spring Boot 기반 백엔드 프로젝트입니다. BitStudio AI API를 활용�
 
 - **Java**: 21
 - **Spring Boot**: 4.0.1
-- **Database**: MySQL 8.0
+- **Database**: PostgreSQL 16
 - **AI Engine**: **Google Gemini 1.5 Flash** (가상 피팅) & **Google Cloud Vision** (의류 분석)
 - **Cache**: Redis 7
 - **ORM**: Spring Data JPA
@@ -98,11 +98,11 @@ JWT_SECRET_KEY=vmlmZS1zZWNyZXQta2V5LWZvci1jYXBzdG9uZS1wcm9qZWN0LWZpdHRpbmctc2Vyd
 2. **Docker Desktop 실행 확인**
    - Docker Desktop이 실행 중인지 확인하세요.
 
-3. **MySQL 및 Redis 컨테이너 시작**
+3. **PostgreSQL 및 Redis 컨테이너 시작**
    ```bash
-   docker-compose up -d mysql redis
+   docker-compose up -d postgres redis
    ```
-   - MySQL과 Redis가 완전히 시작될 때까지 약 10-20초 대기하세요.
+   - PostgreSQL과 Redis가 완전히 시작될 때까지 약 10-20초 대기하세요.
 
 4. **애플리케이션 실행**
    ```bash
@@ -127,8 +127,8 @@ docker-compose logs -f
 # 애플리케이션 로그만 확인
 docker-compose logs -f app
 
-# MySQL 로그만 확인
-docker-compose logs -f mysql
+# PostgreSQL 로그만 확인
+docker-compose logs -f postgres
 ```
 
 #### 컨테이너 중지
@@ -153,10 +153,10 @@ docker-compose up -d --build
 
 ### 로컬 개발 환경 실행
 
-#### 1. MySQL 및 Redis 컨테이너 실행
+#### 1. PostgreSQL 및 Redis 컨테이너 실행
 
 ```bash
-docker-compose up -d mysql redis
+docker-compose up -d postgres redis
 ```
 
 #### 2. 애플리케이션 실행
@@ -174,22 +174,19 @@ java -jar build/libs/*.jar
 
 ### 데이터베이스 접속
 
-#### MySQL 접속
+#### PostgreSQL 접속
 
 Docker Compose로 실행한 경우:
 
 ```bash
-# MySQL 컨테이너에 접속
-docker exec -it capstone-mysql mysql -u user -p capstone_db
-
-# 또는 root로 접속
-docker exec -it capstone-mysql mysql -u root -p
+# PostgreSQL 컨테이너에 접속
+docker exec -it capstone-postgres psql -U capstone_user -d capstone_db
 ```
 
-로컬 MySQL 클라이언트 사용 시:
+로컬 PostgreSQL 클라이언트 사용 시:
 
 ```bash
-mysql -h localhost -P 3307 -u user -p capstone_db
+psql -h localhost -p 5432 -U capstone_user -d capstone_db
 ```
 
 #### Redis 접속
@@ -231,7 +228,7 @@ redis-cli -h localhost -p 6379
 
 ### 데이터베이스 초기화
 
-`init.sql` 파일에 초기 데이터베이스 스키마나 데이터를 추가할 수 있습니다. 이 파일은 MySQL 컨테이너가 처음 시작될 때 자동으로 실행됩니다.
+`init.sql` 파일에 초기 데이터베이스 스키마나 데이터를 추가할 수 있습니다. 이 파일은 PostgreSQL 컨테이너가 처음 시작될 때 자동으로 실행됩니다.
 
 ```bash
 # 특정 서비스 재시작

@@ -1,17 +1,13 @@
--- 1. 데이터베이스가 없으면 생성
-CREATE DATABASE IF NOT EXISTS capstone_db;
+-- PostgreSQL 초기화 스크립트
+-- Docker PostgreSQL 이미지는 POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD env로 DB/유저를 자동 생성함
+-- 아래는 PostgreSQL 15+ 에서 public 스키마 권한 보장용
 
--- 2. 유저가 없으면 생성 (비밀번호 없음)
--- MySQL 5.7+ / 8.0+ 공용 문법
-CREATE USER IF NOT EXISTS 'capstone_user'@'%'
-CREATE USER IF NOT EXISTS 'capstone_user'@'localhost' 
+\c capstone_db
 
--- 3. 권한 부여
-GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, DROP 
-ON capstone_db.* TO 'capstone_user'@'%';
+-- pgvector 확장 활성화 (벡터 유사도 검색용)
+CREATE EXTENSION IF NOT EXISTS vector;
 
-GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, DROP 
-ON capstone_db.* TO 'capstone_user'@'localhost';
-
--- 4. 변경 사항 적용
-FLUSH PRIVILEGES;
+GRANT ALL ON SCHEMA public TO capstone_user;
+GRANT CREATE ON SCHEMA public TO capstone_user;
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO capstone_user;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO capstone_user;

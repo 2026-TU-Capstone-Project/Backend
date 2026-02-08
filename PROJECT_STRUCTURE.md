@@ -254,7 +254,7 @@ public class YourController {
 
 ### application.properties
 주요 설정:
-- MySQL 데이터베이스 연결
+- PostgreSQL 데이터베이스 연결
 - Redis 연결
 - Gemini API 설정 (API 키, 모델, 해상도 등)
 - 이미지 저장 경로 및 URL 설정
@@ -275,7 +275,7 @@ public class YourController {
 cp src/main/resources/application.properties.example src/main/resources/application.properties
 
 # application.properties에 필요한 값 설정
-# - MySQL 연결 정보
+# - PostgreSQL 연결 정보
 # - Redis 연결 정보
 # - Gemini API 키
 
