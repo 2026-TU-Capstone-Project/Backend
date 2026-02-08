@@ -37,9 +37,11 @@ public class ClothesSet {
             joinColumns = @JoinColumn(name = "clothes_set_id"),
             inverseJoinColumns = @JoinColumn(name = "clothes_id")
     )
+    @Builder.Default
     private List<Clothes> clothes = new ArrayList<>();
 
     // 이 세트로 만든 피팅 결과물들
     @OneToMany(mappedBy = "clothesSet", cascade = CascadeType.ALL)
-    private List<FittingTask> fittingTasks = new ArrayList<>();
+    @Builder.Default
+    private List<FittingTask> fittingTasks = new ArrayList<>(); 
 }

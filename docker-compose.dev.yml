@@ -1,23 +1,22 @@
 # 개발용 Docker Compose 설정
-# MySQL과 Redis만 실행 (애플리케이션은 로컬에서 실행)
+# PostgreSQL과 Redis만 실행 (애플리케이션은 로컬에서 실행)
 
 services:
-  mysql:
-    image: mysql:8.0
-    container_name: capstone-mysql
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: capstone-postgres
     restart: always
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE}
-      MYSQL_USER: ${MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
-      - "3306:3306"   # 로컬 접근용
+      - "15432:5432"
     volumes:
-      - mysql_data:/var/lib/mysql
+      - postgres_data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      test: ["CMD-SHELL", "pg_isready -U capstone_user -d capstone_db"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -28,7 +27,6 @@ services:
     image: redis:7-alpine
     container_name: capstone-redis
     restart: always
-    # Values from .env file (matches application.properties)
     command: redis-server --requirepass ${SPRING_DATA_REDIS_PASSWORD}
     ports:
       - "6379:6379"
@@ -41,7 +39,7 @@ services:
       - capstone-network
 
 volumes:
-  mysql_data:
+  postgres_data:
 
 networks:
   capstone-network:

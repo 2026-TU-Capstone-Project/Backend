@@ -2,6 +2,7 @@ package com.example.Capstone_project.service;
 
 // 1. 프로젝트 파일들
 import com.example.Capstone_project.common.exception.BadRequestException;
+import com.example.Capstone_project.domain.Gender;
 import com.example.Capstone_project.dto.*; // VirtualFittingResponse 등 모든 DTO 포함
 
 // 2. Lombok & JSON 처리 (
@@ -62,6 +63,9 @@ public class GeminiService {
 	
 	@Value("${gemini.api.analysis-model}")
 	private String analysisModel;
+
+	@Value("${gemini.api.embedding-model:gemini-embedding-001}")
+	private String embeddingModel;
 	
 	@Value("${gemini.prompt.positive:Put the provided top and bottom garments on the person in the full-body photo.}")
 	private String defaultPositivePrompt;
@@ -689,6 +693,104 @@ public class GeminiService {
 			fallback.setCategory("Unknown");
 			fallback.setColor("알 수 없음");
 			return fallback;
+		}
+	}
+
+	/**
+	 * 이미지 스타일 분석 + 이미지 속 인물 성별 판별
+	 * JSON 응답 파싱: {"style_analysis": "...", "gender": "MALE"|"FEMALE"}
+	 */
+	public StyleAnalysisResult analyzeImageStyleWithGender(byte[] imageBytes) {
+		String prompt = """
+			이 사진을 분석해서 반드시 아래 JSON 형식으로만 답해줘. 다른 텍스트 없이 JSON만 출력해.
+			{
+			  "style_analysis": "이 코디의 스타일을 검색·추천에 활용할 수 있도록 2~3문장으로 분석. [참석 가능한 상황/행사] [옷 스타일 키워드] [전체적인 인상] 형식. 한글로.",
+			  "gender": "MALE 또는 FEMALE"
+			}
+			gender는 사진 속 옷을 입고 있는 인물이 남성인지 여성인지 판별한 결과야. 남성이면 MALE, 여성이면 FEMALE.
+			""";
+		String rawResponse = analyzeImageStyle(imageBytes, prompt);
+
+		// JSON 추출 (```json ... ``` 또는 순수 JSON)
+		String jsonStr = rawResponse.trim();
+		if (jsonStr.contains("```json")) {
+			int start = jsonStr.indexOf("```json") + 7;
+			int end = jsonStr.indexOf("```", start);
+			jsonStr = end > start ? jsonStr.substring(start, end).trim() : jsonStr.substring(start).trim();
+		} else if (jsonStr.contains("```")) {
+			int start = jsonStr.indexOf("```") + 3;
+			int end = jsonStr.indexOf("```", start);
+			jsonStr = end > start ? jsonStr.substring(start, end).trim() : jsonStr.substring(start).trim();
+		}
+
+		try {
+			JsonNode root = objectMapper.readTree(jsonStr);
+			String style = root.has("style_analysis") ? root.get("style_analysis").asText() : rawResponse;
+			Gender gender = null;
+			if (root.has("gender")) {
+				String g = root.get("gender").asText().toUpperCase();
+				if ("MALE".equals(g)) gender = Gender.MALE;
+				else if ("FEMALE".equals(g)) gender = Gender.FEMALE;
+			}
+			return StyleAnalysisResult.builder()
+				.styleAnalysis(style)
+				.resultGender(gender)
+				.build();
+		} catch (Exception e) {
+			log.warn("스타일+성별 JSON 파싱 실패, 스타일만 반환 - {}", e.getMessage());
+			return StyleAnalysisResult.builder()
+				.styleAnalysis(rawResponse)
+				.resultGender(null)
+				.build();
+		}
+	}
+
+	/**
+	 * Gemini Embedding API로 텍스트를 벡터(임베딩)로 변환
+	 * RETRIEVAL_DOCUMENT: 저장할 문서용 (스타일 분석 텍스트)
+	 * RETRIEVAL_QUERY: 검색 쿼리용 (사용자 검색어)
+	 *
+	 * @param text 임베딩할 텍스트
+	 * @param taskType RETRIEVAL_DOCUMENT 또는 RETRIEVAL_QUERY
+	 * @return 1536차원 임베딩 벡터 (정규화됨)
+	 */
+	public float[] embedText(String text, String taskType) {
+		if (text == null || text.trim().isEmpty()) {
+			throw new BadRequestException("Text for embedding cannot be null or empty");
+		}
+		try {
+			String endpoint = "/models/" + embeddingModel + ":embedContent";
+			Map<String, Object> request = new HashMap<>();
+			request.put("content", Map.of("parts", List.of(Map.of("text", text.trim()))));
+			request.put("task_type", taskType != null ? taskType : "RETRIEVAL_DOCUMENT");
+			request.put("output_dimensionality", 1536);
+
+			String responseStr = geminiWebClient.post()
+				.uri(uriBuilder -> uriBuilder.path(endpoint).queryParam("key", geminiApiKey).build())
+				.contentType(MediaType.APPLICATION_JSON)
+				.bodyValue(request)
+				.retrieve()
+				.bodyToMono(String.class)
+				.block();
+
+			JsonNode root = objectMapper.readTree(responseStr);
+			JsonNode embeddingNode = root.path("embedding");
+			if (embeddingNode.isMissingNode()) {
+				embeddingNode = root.path("embeddings").get(0);
+			}
+			JsonNode valuesNode = embeddingNode.path("values");
+			float[] result = new float[valuesNode.size()];
+			for (int i = 0; i < valuesNode.size(); i++) {
+				result[i] = (float) valuesNode.get(i).asDouble();
+			}
+			log.info("✅ Gemini Embedding 완료 - 차원: {}", result.length);
+			return result;
+		} catch (WebClientResponseException e) {
+			log.error("❌ Gemini Embedding API 실패 - {}", e.getResponseBodyAsString(), e);
+			throw new BadRequestException("Embedding API failed: " + e.getMessage());
+		} catch (Exception e) {
+			log.error("❌ Embedding 변환 중 오류", e);
+			throw new BadRequestException("Error creating embedding: " + e.getMessage());
 		}
 	}
 

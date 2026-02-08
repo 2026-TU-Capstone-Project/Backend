@@ -5,6 +5,9 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import com.example.Capstone_project.domain.ClothesSet;
+import org.hibernate.annotations.Array;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import java.time.LocalDateTime;
 
 @Entity
@@ -76,7 +79,20 @@ public class FittingTask {
     private String resultImgUrl; // 가상 피팅 결과 이미지 URL
 
     @Column(name = "style_analysis", columnDefinition = "TEXT")
-    private String styleAnalysis; // 가상 피팅 결과 이미지의 스타일 분석 (한글 텍스트, 예: "캐주얼한 남성 스타일")
+    private String styleAnalysis; // 가상 피팅 결과 이미지의 스타일 분석 (한글 텍스트, 유사도 검색용)
+
+    @Column(name = "style_embedding", columnDefinition = "vector(1536)")
+    @JdbcTypeCode(SqlTypes.VECTOR)
+    @Array(length = 1536)
+    private float[] styleEmbedding; // 스타일 분석 텍스트의 임베딩 벡터 (pgvector 유사도 검색용)
+
+    /**
+     * 결과 이미지 속 인물의 성별 (Gemini가 이미지 분석으로 판별)
+     * 사용자가 다른 성별 사진으로 피팅해도 실제 이미지 기준으로 필터링 가능
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "result_gender", length = 10)
+    private Gender resultGender;
 
     // 👈 FittingTask.java 파일 맨 아래 } 바로 위에 넣으세요.
     @ManyToOne(fetch = FetchType.LAZY)

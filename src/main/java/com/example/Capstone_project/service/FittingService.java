@@ -1,5 +1,6 @@
 package com.example.Capstone_project.service;
 
+import com.example.Capstone_project.dto.StyleAnalysisResult;
 import com.example.Capstone_project.dto.VirtualFittingResponse;
 import com.example.Capstone_project.domain.FittingStatus;
 import com.example.Capstone_project.domain.FittingTask;
@@ -91,18 +92,28 @@ public class FittingService {
                     // 전신 사진 업로드 실패해도 가상 피팅은 성공으로 처리
                 }
 
-                String styleAnalysis = null;
+                StyleAnalysisResult styleResult = null;
                 try {
-                    styleAnalysis = analyzeVirtualFittingResultImage(response.getImageUrl());
-                    log.info("✅ [스타일 분석 완료] Task ID: {}", taskId);
+                    styleResult = analyzeVirtualFittingResultImage(response.getImageUrl());
+                    log.info("✅ [스타일 분석 완료] Task ID: {}, resultGender: {}", taskId, styleResult.getResultGender());
                 } catch (Exception e) {
                     log.error("❌ 스타일 분석 중 오류 발생 - Task ID: {}, 오류: {}", taskId, e.getMessage(), e);
                     // 스타일 분석 실패해도 가상 피팅은 성공으로 처리
                 }
 
-                // 5) 스타일/전신 사진 정보는 별도의 짧은 트랜잭션으로 저장
-                if (bodyImgUrl != null || styleAnalysis != null) {
-                    updateFittingTaskStyleAndBody(taskId, bodyImgUrl, styleAnalysis);
+                // 5) 스타일/전신 사진 정보 및 임베딩은 별도의 짧은 트랜잭션으로 저장
+                if (bodyImgUrl != null || styleResult != null) {
+                    float[] styleEmbedding = null;
+                    String styleAnalysis = styleResult != null ? styleResult.getStyleAnalysis() : null;
+                    if (styleAnalysis != null) {
+                        try {
+                            styleEmbedding = geminiService.embedText(styleAnalysis, "RETRIEVAL_DOCUMENT");
+                        } catch (Exception e) {
+                            log.warn("❌ 스타일 임베딩 생성 실패 - Task ID: {}, 텍스트만 저장", taskId, e);
+                        }
+                    }
+                    updateFittingTaskStyleAndBody(taskId, bodyImgUrl, styleAnalysis, styleEmbedding,
+                        styleResult != null ? styleResult.getResultGender() : null);
                 }
             } else {
                 log.error("❌ 가상 피팅 실패 - 응답 상태: {}", response != null ? response.getStatus() : "null");
@@ -137,7 +148,8 @@ public class FittingService {
     }
 
     @Transactional
-    public void updateFittingTaskStyleAndBody(Long taskId, String bodyImgUrl, String styleAnalysis) {
+    public void updateFittingTaskStyleAndBody(Long taskId, String bodyImgUrl, String styleAnalysis,
+            float[] styleEmbedding, com.example.Capstone_project.domain.Gender resultGender) {
         FittingTask task = fittingRepository.findById(taskId)
                 .orElseThrow(() -> new RuntimeException("Task not found: " + taskId));
 
@@ -147,118 +159,19 @@ public class FittingService {
         if (styleAnalysis != null) {
             task.setStyleAnalysis(styleAnalysis);
         }
+        if (styleEmbedding != null) {
+            task.setStyleEmbedding(styleEmbedding);
+        }
+        if (resultGender != null) {
+            task.setResultGender(resultGender);
+        }
 
         fittingRepository.save(task);
     }
 
-    /**
-     * 가상 피팅 전체 프로세스 (동기) - VirtualFittingController에서 호출
-     * 옷 분석과 가상 피팅을 모두 완료할 때까지 대기하고 완료된 FittingTask 반환
-     * 
-     * @param taskId FittingTask ID
-     * @param userImageBytes 전신 사진 바이트 배열
-     * @param topImageBytes 상의 사진 바이트 배열
-     * @param topImageFilename 상의 사진 파일명
-     * @param bottomImageBytes 하의 사진 바이트 배열
-     * @param bottomImageFilename 하의 사진 파일명
-     * @param clothesAnalysisService 옷 분석 서비스 (순환 참조 방지를 위해 파라미터로 전달)
-     * @return 완료된 FittingTask (resultImgUrl 포함)
-     */
     @Transactional
-    public FittingTask processVirtualFittingWithClothesAnalysisSync(
-            Long taskId,
-            byte[] userImageBytes,
-            byte[] topImageBytes,
-            String topImageFilename,
-            byte[] bottomImageBytes,
-            String bottomImageFilename,
-            ClothesAnalysisService clothesAnalysisService,
-            FittingTask task,
-            User user
-    ) {
-        log.info("🚀 [동기] 가상 피팅 전체 프로세스 시작 - Task ID: {}", taskId);
-
-        try {
-            final User currentUser = task.getUser();
-            // 1. 옷 분석 시작 (병렬 처리 - 동일 taskExecutor 사용)
-            CompletableFuture<Long> topAnalysisFuture = CompletableFuture.supplyAsync(() -> {
-                try {
-                    log.info("🔄 [동기] 상의 분석 시작 - Task ID: {}", taskId);
-                    return clothesAnalysisService.analyzeAndSaveClothes(topImageBytes, topImageFilename, "Top", currentUser);
-                } catch (Exception e) {
-                    log.error("❌ 상의 분석 중 오류 발생 - Task ID: {}", taskId, e);
-                    return null;
-                }
-            }, taskExecutor);
-
-            CompletableFuture<Long> bottomAnalysisFuture = CompletableFuture.supplyAsync(() -> {
-                try {
-                    log.info("🔄 [동기] 하의 분석 시작 - Task ID: {}", taskId);
-                    return clothesAnalysisService.analyzeAndSaveClothes(bottomImageBytes, bottomImageFilename, "Bottom", currentUser);
-                } catch (Exception e) {
-                    log.error("❌ 하의 분석 중 오류 발생 - Task ID: {}", taskId, e);
-                    return null;
-                }
-            }, taskExecutor);
-
-            // 2. 옷 분석 완료 대기
-            CompletableFuture.allOf(topAnalysisFuture, bottomAnalysisFuture).join();
-            Long topId = topAnalysisFuture.join();
-            Long bottomId = bottomAnalysisFuture.join();
-
-            if (topId == null || bottomId == null) {
-                log.error("❌ 옷 분석 실패로 인해 가상 피팅을 시작할 수 없습니다 - Task ID: {}, topId: {}, bottomId: {}", 
-                        taskId, topId, bottomId);
-                updateTaskStatus(taskId, FittingStatus.FAILED);
-                return fittingRepository.findById(taskId).orElse(null);
-            }
-
-            // FittingTask에 옷 ID 연결
-            updateFittingTaskClothes(taskId, topId, bottomId);
-            log.info("✅ FittingTask에 옷 정보 연결 완료 - Task ID: {}, topId: {}, bottomId: {}", 
-                    taskId, topId, bottomId);
-
-            // 3. 가상 피팅 처리 (동기)
-            final FittingTask dbtask = fittingRepository.findById(taskId)
-                    .orElseThrow(() -> new RuntimeException("Task not found: " + taskId));
-
-            task.setStatus(FittingStatus.PROCESSING);
-            fittingRepository.save(task);
-
-            VirtualFittingResponse response = geminiService.processVirtualFitting(
-                    userImageBytes,
-                    topImageBytes,
-                    bottomImageBytes,
-                    null, null, null
-            );
-
-            if (response != null && "completed".equals(response.getStatus())) {
-                task.setStatus(FittingStatus.COMPLETED);
-                task.setResultImgUrl(response.getImageUrl());
-                log.info("✅ [작업 완료] URL: {}", response.getImageUrl());
-
-                // 4. 가상 피팅 결과 이미지 스타일 분석
-                try {
-                    String styleAnalysisJson = analyzeVirtualFittingResultImage(response.getImageUrl());
-                    task.setStyleAnalysis(styleAnalysisJson);
-                    log.info("✅ [스타일 분석 완료] Task ID: {}", taskId);
-                } catch (Exception e) {
-                    log.error("❌ 스타일 분석 중 오류 발생 - Task ID: {}, 오류: {}", taskId, e.getMessage(), e);
-                    // 스타일 분석 실패해도 가상 피팅은 성공으로 처리
-                }
-            } else {
-                task.setStatus(FittingStatus.FAILED);
-                log.error("❌ 가상 피팅 실패 - 응답 상태: {}", response != null ? response.getStatus() : "null");
-            }
-            
-            fittingRepository.save(task);
-            return task;
-
-        } catch (Exception e) {
-            log.error("❌ 가상 피팅 전체 프로세스 중 오류 발생 - Task ID: {}", taskId, e);
-            updateTaskStatus(taskId, FittingStatus.FAILED);
-            return fittingRepository.findById(taskId).orElse(null);
-        }
+    public void updateFittingTaskStyleAndBody(Long taskId, String bodyImgUrl, String styleAnalysis) {
+        updateFittingTaskStyleAndBody(taskId, bodyImgUrl, styleAnalysis, null, null);
     }
 
     /**
@@ -370,13 +283,13 @@ public class FittingService {
     }
 
     /**
-     * 가상 피팅 결과 이미지의 스타일 분석
-     * Gemini 3 Flash API를 사용하여 이미지를 분석하고 한글로 스타일 설명 생성
-     * 
+     * 가상 피팅 결과 이미지의 스타일 분석 + 이미지 속 인물 성별 판별
+     * Gemini가 스타일 설명과 함께 사진 속 인물이 남성/여성인지 판별함
+     *
      * @param resultImgUrl 가상 피팅 결과 이미지 URL (GCS URL 또는 로컬 경로)
-     * @return 스타일 분석 결과 한글 텍스트
+     * @return 스타일 분석 + 성별 (resultGender)
      */
-    private String analyzeVirtualFittingResultImage(String resultImgUrl) throws IOException {
+    private StyleAnalysisResult analyzeVirtualFittingResultImage(String resultImgUrl) throws IOException {
         log.info("🎨 가상 피팅 결과 이미지 스타일 분석 시작 - URL: {}", resultImgUrl);
         
         byte[] imageBytes;
@@ -401,23 +314,14 @@ public class FittingService {
             log.info("📸 로컬 파일에서 이미지 읽기 완료 - 크기: {} bytes", imageBytes.length);
         }
         
-        // Gemini API로 스타일 분석
-        String prompt = "이 사진 속 코디의 스타일을 2줄 정도로 분석해줘";
-        String styleAnalysis = geminiService.analyzeImageStyle(imageBytes, prompt);
-        log.info("✅ Gemini API 스타일 분석 완료 - 결과 길이: {} 문자", styleAnalysis.length());
-        
-        return styleAnalysis;
+        StyleAnalysisResult result = geminiService.analyzeImageStyleWithGender(imageBytes);
+        log.info("✅ Gemini API 스타일+성별 분석 완료 - resultGender: {}", result.getResultGender());
+        return result;
     }
 
-    @Transactional
-    public void saveTask(FittingTask task) {
-        fittingRepository.save(task);
-    }
     @Transactional(readOnly = true)
     public List<FittingTask> getSavedFittingList(Long userId) {
         return fittingRepository.findByUserIdAndIsSavedTrue(userId);
     }
 
-    public void processVirtualFittingWithClothesAnalysis(Long id, byte[] userImageBytes, String userImageFilename, byte[] topImageBytes, String topImageFilename, byte[] bottomImageBytes, String bottomImageFilename, ClothesAnalysisService clothesAnalysisService) {
-    }
 }
