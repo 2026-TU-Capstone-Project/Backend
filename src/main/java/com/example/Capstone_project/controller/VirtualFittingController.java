@@ -4,11 +4,13 @@ import com.example.Capstone_project.common.dto.ApiResponse;
 import com.example.Capstone_project.domain.FittingTask;
 import com.example.Capstone_project.domain.User;
 import com.example.Capstone_project.config.CustomUserDetails;
+import com.example.Capstone_project.dto.StyleRecommendationResponse;
 import com.example.Capstone_project.dto.VirtualFittingStatusResponse;
 import com.example.Capstone_project.dto.VirtualFittingTaskIdResponse;
 import com.example.Capstone_project.service.ClothesAnalysisService;
 import com.example.Capstone_project.service.FittingService;
 import com.example.Capstone_project.service.GoogleCloudStorageService;
+import com.example.Capstone_project.service.StyleRecommendationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -43,14 +45,15 @@ import java.util.concurrent.Executor;
 @RequiredArgsConstructor
 @RequestMapping("/api/v1/virtual-fitting")
 public class VirtualFittingController {
-
-    private final FittingService fittingService;
-    private final ClothesAnalysisService clothesAnalysisService;
-    private final GoogleCloudStorageService gcsService;
+	
+	private final FittingService fittingService;
+	private final ClothesAnalysisService clothesAnalysisService;
+	private final GoogleCloudStorageService gcsService;
     private final Executor taskExecutor;
-
-    @Value("${virtual-fitting.image.storage-path:./images/virtual-fitting}")
-    private String imageStoragePath;
+	private final StyleRecommendationService styleRecommendationService;
+	
+	@Value("${virtual-fitting.image.storage-path:./images/virtual-fitting}")
+	private String imageStoragePath;
 
     @Operation(summary = "가상 피팅 요청")
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -102,27 +105,6 @@ public class VirtualFittingController {
         }
     }
 
-    @Operation(summary = "가상 피팅 작업 상태 조회")
-    @GetMapping("/status/{taskId}")
-    public ResponseEntity<ApiResponse<VirtualFittingStatusResponse>> getFittingStatus(@PathVariable Long taskId) {
-        FittingTask task = fittingService.checkStatus(taskId);
-
-        if (task == null) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(ApiResponse.error("Fitting task not found: " + taskId));
-        }
-
-
-        VirtualFittingStatusResponse body = VirtualFittingStatusResponse.builder()
-                .taskId(task.getId())
-                .status(task.getStatus())
-                .resultImgUrl(task.getResultImgUrl())
-                .build();
-
-
-        return ResponseEntity.ok(ApiResponse.success("Fitting task status retrieved", body));
-    }
-
     @Operation(summary = "피팅 결과 내 옷장 저장")
     @PatchMapping("/{taskId}/save")
     public ResponseEntity<ApiResponse<String>> saveFittingResult(@PathVariable Long taskId) {
@@ -164,4 +146,44 @@ public class VirtualFittingController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
+
+	@Operation(
+		summary = "가상 피팅 작업 상태 조회",
+		description = "가상 피팅 작업의 현재 상태를 조회합니다."
+	)
+	@GetMapping("/status/{taskId}")
+	public ResponseEntity<ApiResponse<VirtualFittingStatusResponse>> getFittingStatus(
+		@Parameter(description = "작업 ID", required = true)
+		@PathVariable Long taskId) {
+		FittingTask task = fittingService.checkStatus(taskId);
+		if (task == null) {
+			return ResponseEntity.status(HttpStatus.NOT_FOUND)
+				.body(ApiResponse.error("Fitting task not found: " + taskId));
+		}
+		VirtualFittingStatusResponse body = new VirtualFittingStatusResponse(
+			task.getId(),
+			task.getStatus(),
+			task.getResultImgUrl()
+		);
+		return ResponseEntity.ok(ApiResponse.success("Fitting task status retrieved", body));
+	}
+
+	@Operation(
+		summary = "스타일 추천",
+		description = "사용자 검색어와 유사한 가상 피팅 결과를 최대 10개까지 추천합니다. " +
+			"userId를 보내면 해당 사용자 성별(UserProfile)과 같은 스타일만 반환합니다 (남자→남자 스타일, 여자→여자 스타일)."
+	)
+	@GetMapping("/recommend")
+	public ResponseEntity<ApiResponse<StyleRecommendationResponse>> recommendByStyle(
+		@Parameter(description = "검색어 (예: 결혼식에 입고 갈 단정하고 깔끔한 스타일 추천해줘)", required = true)
+		@RequestParam("query") String query,
+		@Parameter(description = "최소 유사도 점수 (0~1). 이 점수 이상만 반환. 생략 시 필터 없음.")
+		@RequestParam(value = "minScore", required = false) Double minScore,
+		@Parameter(description = "사용자 ID. 로그인 유저 ID를 보내면 해당 성별의 스타일만 추천됨. 생략 시 성별 필터 없음.")
+		@RequestParam(value = "userId", required = false) Long userId
+	) {
+		var recommendations = styleRecommendationService.recommendByStyle(query, minScore, userId);
+		StyleRecommendationResponse body = StyleRecommendationResponse.from(recommendations);
+		return ResponseEntity.ok(ApiResponse.success("스타일 추천 결과", body));
+	}
 }

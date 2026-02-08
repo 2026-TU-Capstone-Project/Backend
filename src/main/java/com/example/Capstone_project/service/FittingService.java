@@ -1,5 +1,6 @@
 package com.example.Capstone_project.service;
 
+import com.example.Capstone_project.dto.StyleAnalysisResult;
 import com.example.Capstone_project.dto.VirtualFittingResponse;
 import com.example.Capstone_project.domain.FittingStatus;
 import com.example.Capstone_project.domain.FittingTask;
@@ -91,18 +92,28 @@ public class FittingService {
                     // 전신 사진 업로드 실패해도 가상 피팅은 성공으로 처리
                 }
 
-                String styleAnalysis = null;
+                StyleAnalysisResult styleResult = null;
                 try {
-                    styleAnalysis = analyzeVirtualFittingResultImage(response.getImageUrl());
-                    log.info("✅ [스타일 분석 완료] Task ID: {}", taskId);
+                    styleResult = analyzeVirtualFittingResultImage(response.getImageUrl());
+                    log.info("✅ [스타일 분석 완료] Task ID: {}, resultGender: {}", taskId, styleResult.getResultGender());
                 } catch (Exception e) {
                     log.error("❌ 스타일 분석 중 오류 발생 - Task ID: {}, 오류: {}", taskId, e.getMessage(), e);
                     // 스타일 분석 실패해도 가상 피팅은 성공으로 처리
                 }
 
-                // 5) 스타일/전신 사진 정보는 별도의 짧은 트랜잭션으로 저장
-                if (bodyImgUrl != null || styleAnalysis != null) {
-                    updateFittingTaskStyleAndBody(taskId, bodyImgUrl, styleAnalysis);
+                // 5) 스타일/전신 사진 정보 및 임베딩은 별도의 짧은 트랜잭션으로 저장
+                if (bodyImgUrl != null || styleResult != null) {
+                    float[] styleEmbedding = null;
+                    String styleAnalysis = styleResult != null ? styleResult.getStyleAnalysis() : null;
+                    if (styleAnalysis != null) {
+                        try {
+                            styleEmbedding = geminiService.embedText(styleAnalysis, "RETRIEVAL_DOCUMENT");
+                        } catch (Exception e) {
+                            log.warn("❌ 스타일 임베딩 생성 실패 - Task ID: {}, 텍스트만 저장", taskId, e);
+                        }
+                    }
+                    updateFittingTaskStyleAndBody(taskId, bodyImgUrl, styleAnalysis, styleEmbedding,
+                        styleResult != null ? styleResult.getResultGender() : null);
                 }
             } else {
                 log.error("❌ 가상 피팅 실패 - 응답 상태: {}", response != null ? response.getStatus() : "null");
@@ -137,7 +148,8 @@ public class FittingService {
     }
 
     @Transactional
-    public void updateFittingTaskStyleAndBody(Long taskId, String bodyImgUrl, String styleAnalysis) {
+    public void updateFittingTaskStyleAndBody(Long taskId, String bodyImgUrl, String styleAnalysis,
+            float[] styleEmbedding, com.example.Capstone_project.domain.Gender resultGender) {
         FittingTask task = fittingRepository.findById(taskId)
                 .orElseThrow(() -> new RuntimeException("Task not found: " + taskId));
 
@@ -147,8 +159,19 @@ public class FittingService {
         if (styleAnalysis != null) {
             task.setStyleAnalysis(styleAnalysis);
         }
+        if (styleEmbedding != null) {
+            task.setStyleEmbedding(styleEmbedding);
+        }
+        if (resultGender != null) {
+            task.setResultGender(resultGender);
+        }
 
         fittingRepository.save(task);
+    }
+
+    @Transactional
+    public void updateFittingTaskStyleAndBody(Long taskId, String bodyImgUrl, String styleAnalysis) {
+        updateFittingTaskStyleAndBody(taskId, bodyImgUrl, styleAnalysis, null, null);
     }
 
     /**
@@ -237,11 +260,18 @@ public class FittingService {
                 task.setResultImgUrl(response.getImageUrl());
                 log.info("✅ [작업 완료] URL: {}", response.getImageUrl());
 
-                // 4. 가상 피팅 결과 이미지 스타일 분석
+                // 4. 가상 피팅 결과 이미지 스타일 분석 및 임베딩 저장
                 try {
-                    String styleAnalysisJson = analyzeVirtualFittingResultImage(response.getImageUrl());
-                    task.setStyleAnalysis(styleAnalysisJson);
-                    log.info("✅ [스타일 분석 완료] Task ID: {}", taskId);
+                    StyleAnalysisResult styleResult = analyzeVirtualFittingResultImage(response.getImageUrl());
+                    task.setStyleAnalysis(styleResult.getStyleAnalysis());
+                    task.setResultGender(styleResult.getResultGender());
+                    try {
+                        float[] embedding = geminiService.embedText(styleResult.getStyleAnalysis(), "RETRIEVAL_DOCUMENT");
+                        task.setStyleEmbedding(embedding);
+                    } catch (Exception embEx) {
+                        log.warn("❌ 스타일 임베딩 생성 실패 - Task ID: {}, 텍스트만 저장", taskId, embEx);
+                    }
+                    log.info("✅ [스타일 분석 완료] Task ID: {}, resultGender: {}", taskId, styleResult.getResultGender());
                 } catch (Exception e) {
                     log.error("❌ 스타일 분석 중 오류 발생 - Task ID: {}, 오류: {}", taskId, e.getMessage(), e);
                     // 스타일 분석 실패해도 가상 피팅은 성공으로 처리
@@ -370,13 +400,13 @@ public class FittingService {
     }
 
     /**
-     * 가상 피팅 결과 이미지의 스타일 분석
-     * Gemini 3 Flash API를 사용하여 이미지를 분석하고 한글로 스타일 설명 생성
-     * 
+     * 가상 피팅 결과 이미지의 스타일 분석 + 이미지 속 인물 성별 판별
+     * Gemini가 스타일 설명과 함께 사진 속 인물이 남성/여성인지 판별함
+     *
      * @param resultImgUrl 가상 피팅 결과 이미지 URL (GCS URL 또는 로컬 경로)
-     * @return 스타일 분석 결과 한글 텍스트
+     * @return 스타일 분석 + 성별 (resultGender)
      */
-    private String analyzeVirtualFittingResultImage(String resultImgUrl) throws IOException {
+    private StyleAnalysisResult analyzeVirtualFittingResultImage(String resultImgUrl) throws IOException {
         log.info("🎨 가상 피팅 결과 이미지 스타일 분석 시작 - URL: {}", resultImgUrl);
         
         byte[] imageBytes;
@@ -401,12 +431,9 @@ public class FittingService {
             log.info("📸 로컬 파일에서 이미지 읽기 완료 - 크기: {} bytes", imageBytes.length);
         }
         
-        // Gemini API로 스타일 분석
-        String prompt = "이 사진 속 코디의 스타일을 2줄 정도로 분석해줘";
-        String styleAnalysis = geminiService.analyzeImageStyle(imageBytes, prompt);
-        log.info("✅ Gemini API 스타일 분석 완료 - 결과 길이: {} 문자", styleAnalysis.length());
-        
-        return styleAnalysis;
+        StyleAnalysisResult result = geminiService.analyzeImageStyleWithGender(imageBytes);
+        log.info("✅ Gemini API 스타일+성별 분석 완료 - resultGender: {}", result.getResultGender());
+        return result;
     }
 
     @Transactional
