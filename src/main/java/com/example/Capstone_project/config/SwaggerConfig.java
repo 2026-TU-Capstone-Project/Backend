@@ -12,20 +12,33 @@ import org.springframework.context.annotation.Configuration;
 
 /**
  * Swagger (SpringDoc OpenAPI) 설정
+ * 문서 확인: /swagger-ui.html 또는 /swagger-ui/index.html
  */
 @Configuration
 public class SwaggerConfig {
-	
+
 	@Bean
 	public OpenAPI openAPI() {
 		return new OpenAPI()
 			.info(new Info()
 				.title("Capstone Project API")
-				.description("Spring Boot 기반 백엔드 API 문서\n\n" +
-					"주요 기능:\n" +
-					"- Virtual Try-On API (BitStudio)\n" +
-					"- Virtual Fitting API (Nano Banana Pro)\n" +
-					"- RESTful API")
+				.description("""
+					## 개요
+					가상 피팅 및 옷장 관리 서비스 백엔드 API입니다.
+
+					## 인증
+					- **로그인/회원가입** (`/api/auth/*`): 인증 불필요
+					- **나머지 API**: 로그인 후 받은 `accessToken`을 **Authorize** 버튼에서 `Bearer {토큰}` 형식으로 입력하세요.
+
+					## 주요 기능
+					| 태그 | 설명 |
+					|------|------|
+					| Auth | 로그인, 회원가입 |
+					| Virtual Fitting | 가상 피팅 요청·상태 조회·스타일 추천 |
+					| Clothes | 옷 등록·분석·조회·삭제 |
+					| Clothes Set | 코디 폴더(세트) 저장·수정·삭제 |
+					| Deploy | 배포 확인용 (테스트) |
+					""")
 				.version("v1.0")
 				.contact(new Contact()
 					.name("Capstone Team")
