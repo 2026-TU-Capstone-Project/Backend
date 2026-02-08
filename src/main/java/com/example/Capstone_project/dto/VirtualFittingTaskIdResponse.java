@@ -11,7 +11,7 @@ import lombok.Getter;
 @Schema(description = "가상 피팅 작업 ID")
 public class VirtualFittingTaskIdResponse {
 
-	@Schema(example = "123", description = "작업 ID (문자열)")
+	@Schema(example = "123", description = "가상 피팅 작업 ID. /status/{taskId}로 상태 조회 가능")
 	private Long taskId;
 }
 

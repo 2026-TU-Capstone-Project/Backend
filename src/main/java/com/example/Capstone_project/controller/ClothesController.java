@@ -6,22 +6,22 @@ import com.example.Capstone_project.repository.ClothesRepository;
 import com.example.Capstone_project.service.ClothesAnalysisService;
 import com.example.Capstone_project.dto.ClothesRequestDto;
 import com.example.Capstone_project.service.GoogleCloudStorageService;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import lombok.RequiredArgsConstructor;
 import com.example.Capstone_project.config.CustomUserDetails;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
-/**
- * Clothes API Controller
- * 옷 등록 및 분석 기능 제공 (비동기 처리)
- */
+@Tag(name = "Clothes", description = "옷 등록·분석·조회·삭제")
 @Slf4j
 @RestController
 @RequiredArgsConstructor
@@ -32,14 +32,14 @@ public class ClothesController {
     private final ClothesAnalysisService clothesAnalysisService;
     private final GoogleCloudStorageService gcsService;
 
-    /**
-     * 옷 등록 및 분석 (AI 초정밀 분석 기능 탑재)
-     * 비동기로 처리되며 즉시 202 Accepted 응답 반환
-     */
+    @Operation(
+        summary = "옷 1건 등록",
+        description = "옷 사진 1장을 업로드하여 AI 분석 후 저장합니다. **비동기 처리** → 즉시 202 Accepted 반환, 백그라운드에서 분석·저장됩니다."
+    )
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ApiResponse<String>> uploadClothes(
-            @RequestParam("file") MultipartFile file,
-            @RequestParam("category") String category,
+            @Parameter(description = "옷 이미지 파일", required = true) @RequestParam("file") MultipartFile file,
+            @Parameter(description = "카테고리 (Top / Bottom / Shoes)", example = "Top", required = true) @RequestParam("category") String category,
             @AuthenticationPrincipal CustomUserDetails userDetails
     ) {
         log.info("Clothes upload request received - file: {}, category: {}", 
@@ -59,14 +59,14 @@ public class ClothesController {
                         "옷 등록이 시작되었습니다. 백그라운드에서 분석 및 저장이 진행됩니다."));
     }
 
-    /**
-     * 옷 분석 요청 (기존 메서드 유지)
-     * 상의, 하의, 신발을 한 번에 분석
-     */
+    @Operation(
+        summary = "옷 일괄 분석",
+        description = "상의·하의·신발을 한 번에 업로드하여 동기로 분석·저장합니다. 각 필드는 선택적으로 업로드 가능합니다."
+    )
     @PostMapping(value = "/analysis", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ApiResponse<String>> analyze(
             @ModelAttribute ClothesRequestDto requestDto,
-            @AuthenticationPrincipal CustomUserDetails userDetails // 👈 CustomUserDetails로 이름 수정
+            @AuthenticationPrincipal CustomUserDetails userDetails
     ) {
         log.info("👕 Clothes analysis request received");
 
@@ -98,9 +98,7 @@ public class ClothesController {
         }
     }
 
-    /**
-     * 옷 목록 조회
-     */
+    @Operation(summary = "내 옷장 목록 조회", description = "로그인한 사용자의 옷 목록을 최신순으로 조회합니다.")
     @GetMapping
     public ResponseEntity<ApiResponse<List<Clothes>>> getAllClothes(
             @AuthenticationPrincipal CustomUserDetails userDetails
@@ -110,11 +108,10 @@ public class ClothesController {
         return ResponseEntity.ok(ApiResponse.success("내 옷장 목록 조회 성공", clothesList));
     }
 
-    /**
-     * 옷 상세 조회
-     */
+    @Operation(summary = "옷 상세 조회")
     @GetMapping("/{id}")
-    public ResponseEntity<ApiResponse<Clothes>> getClothesById(@PathVariable Long id) {
+    public ResponseEntity<ApiResponse<Clothes>> getClothesById(
+            @Parameter(description = "옷(Clothes) ID") @PathVariable Long id) {
         Clothes clothes = clothesRepository.findById(id)
                 .orElse(null);
         
@@ -126,10 +123,10 @@ public class ClothesController {
         return ResponseEntity.ok(ApiResponse.success("Clothes retrieved", clothes));
     }
 
-    // [ClothesController.java]
+    @Operation(summary = "옷 삭제", description = "본인 소유 옷만 삭제 가능합니다.")
     @DeleteMapping("/{id}")
     public ResponseEntity<ApiResponse<String>> deleteClothes(
-            @PathVariable Long id,
+            @Parameter(description = "옷(Clothes) ID") @PathVariable Long id,
             @AuthenticationPrincipal CustomUserDetails userDetails
     ) {
         Clothes clothes = clothesRepository.findById(id)

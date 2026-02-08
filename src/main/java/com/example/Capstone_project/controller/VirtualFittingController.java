@@ -39,7 +39,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 
-@Tag(name = "Virtual Fitting", description = "나노바나나 프로 API를 활용한 가상 피팅 API")
+@Tag(name = "Virtual Fitting", description = "가상 피팅 요청·상태 조회·스타일 추천. 전신 사진 + 상의/하의 사진으로 AI 가상 피팅을 수행합니다.")
 @Slf4j
 @RestController
 @RequiredArgsConstructor
@@ -55,12 +55,15 @@ public class VirtualFittingController {
 	@Value("${virtual-fitting.image.storage-path:./images/virtual-fitting}")
 	private String imageStoragePath;
 
-    @Operation(summary = "가상 피팅 요청")
+    @Operation(
+        summary = "가상 피팅 요청",
+        description = "전신 사진 + 상의(필수) + 하의(선택)를 업로드하여 가상 피팅을 요청합니다. **비동기 처리** → 즉시 202 Accepted + taskId 반환. 이후 `/status/{taskId}`로 진행 상태를 폴링하세요."
+    )
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ApiResponse<VirtualFittingTaskIdResponse>> createVirtualFitting(
-            @RequestParam("user_image") MultipartFile userImage,
-            @RequestParam("top_image") MultipartFile topImage,
-            @RequestParam(value = "bottom_image", required = false) MultipartFile bottomImage,
+            @Parameter(description = "전신 사진 (착용할 사람)", required = true) @RequestParam("user_image") MultipartFile userImage,
+            @Parameter(description = "상의 이미지", required = true) @RequestParam("top_image") MultipartFile topImage,
+            @Parameter(description = "하의 이미지 (선택)") @RequestParam(value = "bottom_image", required = false) MultipartFile bottomImage,
             @AuthenticationPrincipal CustomUserDetails userDetails
     ) {
         if (userImage.isEmpty() || topImage.isEmpty()) {
@@ -107,7 +110,7 @@ public class VirtualFittingController {
     }
 
 
-    @Operation(summary = "내가 저장한 코디 목록 조회")
+    @Operation(summary = "내가 저장한 코디 목록", description = "사용자가 저장한 가상 피팅 결과 목록을 조회합니다.")
     @GetMapping("/my-closet")
     public ResponseEntity<ApiResponse<List<FittingTask>>> getMySavedFittings(@AuthenticationPrincipal CustomUserDetails userDetails) {
         Long userId = userDetails.getUser().getId();
@@ -118,12 +121,11 @@ public class VirtualFittingController {
 
 	@Operation(
 		summary = "가상 피팅 작업 상태 조회",
-		description = "가상 피팅 작업의 현재 상태를 조회합니다."
+		description = "가상 피팅 요청 후 반환된 taskId로 진행 상태를 조회합니다. status가 COMPLETED가 될 때까지 폴링하세요."
 	)
 	@GetMapping("/status/{taskId}")
 	public ResponseEntity<ApiResponse<VirtualFittingStatusResponse>> getFittingStatus(
-		@Parameter(description = "작업 ID", required = true)
-		@PathVariable Long taskId) {
+		@Parameter(description = "가상 피팅 작업 ID (createVirtualFitting 응답의 taskId)", required = true) @PathVariable Long taskId) {
 		FittingTask task = fittingService.checkStatus(taskId);
 		if (task == null) {
 			return ResponseEntity.status(HttpStatus.NOT_FOUND)
@@ -139,8 +141,7 @@ public class VirtualFittingController {
 
 	@Operation(
 		summary = "스타일 추천",
-		description = "사용자 검색어와 유사한 가상 피팅 결과를 최대 10개까지 추천합니다. " +
-			"userId를 보내면 해당 사용자 성별(UserProfile)과 같은 스타일만 반환합니다 (남자→남자 스타일, 여자→여자 스타일)."
+		description = "검색어(자연어)와 유사한 가상 피팅 결과를 최대 10개 추천합니다. userId를 넣으면 해당 사용자 성별과 같은 스타일만 반환됩니다."
 	)
 	@GetMapping("/recommend")
 	public ResponseEntity<ApiResponse<StyleRecommendationResponse>> recommendByStyle(

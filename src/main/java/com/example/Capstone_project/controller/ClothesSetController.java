@@ -6,8 +6,9 @@ import com.example.Capstone_project.domain.ClothesSet;
 import com.example.Capstone_project.service.ClothesSetService;
 import com.example.Capstone_project.dto.ClothesSetResponseDto;
 import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.RequiredArgsConstructor;
@@ -29,20 +30,26 @@ public class ClothesSetController {
     @NoArgsConstructor
     @Schema(description = "코디 저장 요청")
     public static class SaveRequest {
+        @Schema(description = "폴더 이름", example = "주말 데이트룩")
         private String setName;
+        @Schema(description = "포함할 옷(Clothes) ID 목록")
         private List<Long> clothesIds;
+        @Schema(description = "가상 피팅 결과(FittingTask) ID")
         private Long fittingTaskId;
     }
 
     @Getter
     @NoArgsConstructor
+    @Schema(description = "폴더 이름 수정 요청")
     public static class UpdateRequest {
+        @Schema(description = "새 폴더 이름", example = "데이트룩")
         private String newName;
     }
 
-    // 코디 저장 (폴더 생성 및 첫 착장 저장)
-
-    @Operation(summary = "코디 저장", description = "폴더를 생성하고 첫 착장 결과와 옷 정보를 저장합니다.")
+    @Operation(
+        summary = "코디 저장",
+        description = "새 폴더를 만들고, 가상 피팅 결과(착장)와 옷 ID들을 함께 저장합니다."
+    )
     @PostMapping("/save")
     public ResponseEntity<ApiResponse<Long>> saveSet(
             @RequestBody SaveRequest request,
@@ -59,7 +66,7 @@ public class ClothesSetController {
     @Operation(summary = "폴더 이름 수정", description = "기존 코디 폴더의 이름을 변경합니다.")
     @PatchMapping("/{id}")
     public ResponseEntity<ApiResponse<String>> updateSetName(
-            @PathVariable Long id,
+            @Parameter(description = "코디 세트(폴더) ID") @PathVariable Long id,
             @RequestBody UpdateRequest request,
             @AuthenticationPrincipal CustomUserDetails userDetails
     ) {
@@ -82,7 +89,7 @@ public class ClothesSetController {
     @Operation(summary = "착장 개별 삭제", description = "폴더 내에 저장된 특정 피팅 결과(착장)를 삭제합니다.")
     @DeleteMapping("/fitting/{fittingTaskId}")
     public ResponseEntity<ApiResponse<String>> deleteFitting(
-            @PathVariable Long fittingTaskId,
+            @Parameter(description = "삭제할 피팅 작업(FittingTask) ID") @PathVariable Long fittingTaskId,
             @AuthenticationPrincipal CustomUserDetails userDetails
     ) {
         clothesSetService.deleteFittingFromSet(fittingTaskId, userDetails.getUser());
@@ -93,7 +100,7 @@ public class ClothesSetController {
     @Operation(summary = "폴더 전체 삭제", description = "코디 폴더와 그 안의 모든 내용을 삭제합니다.")
     @DeleteMapping("/{id}")
     public ResponseEntity<ApiResponse<String>> deleteSet(
-            @PathVariable Long id,
+            @Parameter(description = "코디 세트(폴더) ID") @PathVariable Long id,
             @AuthenticationPrincipal CustomUserDetails userDetails
     ) {
         clothesSetService.deleteSet(id, userDetails.getUser());
