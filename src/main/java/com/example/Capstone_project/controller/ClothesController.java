@@ -28,7 +28,7 @@ import java.util.List;
 @Slf4j
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/api/clothes")
+@RequestMapping("/api/v1/clothes")
 public class ClothesController {
 
     private final ClothesRepository clothesRepository;

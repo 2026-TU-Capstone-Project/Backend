@@ -28,7 +28,7 @@ public class SwaggerConfig {
 					가상 피팅 및 옷장 관리 서비스 백엔드 API입니다.
 
 					## 인증
-					- **로그인/회원가입** (`/api/auth/*`): 인증 불필요
+					- **로그인/회원가입** (`/api/v1/auth/*`): 인증 불필요
 					- **나머지 API**: 로그인 후 받은 `accessToken`을 **Authorize** 버튼에서 `Bearer {토큰}` 형식으로 입력하세요.
 
 					## 주요 기능
