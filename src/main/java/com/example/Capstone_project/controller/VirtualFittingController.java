@@ -4,6 +4,7 @@ import com.example.Capstone_project.common.dto.ApiResponse;
 import com.example.Capstone_project.domain.FittingTask;
 import com.example.Capstone_project.domain.User;
 import com.example.Capstone_project.config.CustomUserDetails;
+import com.example.Capstone_project.dto.SavedFittingResponseDto;
 import com.example.Capstone_project.dto.StyleRecommendationResponse;
 import com.example.Capstone_project.dto.VirtualFittingStatusResponse;
 import com.example.Capstone_project.dto.VirtualFittingTaskIdResponse;
@@ -112,10 +113,23 @@ public class VirtualFittingController {
 
     @Operation(summary = "내가 저장한 코디 목록", description = "사용자가 저장한 가상 피팅 결과 목록을 조회합니다.")
     @GetMapping("/my-closet")
-    public ResponseEntity<ApiResponse<List<FittingTask>>> getMySavedFittings(@AuthenticationPrincipal CustomUserDetails userDetails) {
+    public ResponseEntity<ApiResponse<List<SavedFittingResponseDto>>> getMySavedFittings(@AuthenticationPrincipal CustomUserDetails userDetails) {
         Long userId = userDetails.getUser().getId();
-        List<FittingTask> savedList = fittingService.getSavedFittingList(userId);
+        List<SavedFittingResponseDto> savedList = fittingService.getSavedFittingListAsDtos(userId);
         return ResponseEntity.ok(ApiResponse.success("조회 성공", savedList));
+    }
+
+    @Operation(summary = "피팅 결과 내 옷장 저장")
+    @PatchMapping("/{taskId}/save")
+    public ResponseEntity<ApiResponse<String>> saveFittingResult(@PathVariable Long taskId) {
+        FittingTask task = fittingService.checkStatus(taskId);
+        if (task == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponse.error("기록 없음"));
+        }
+
+        task.setSaved(true);
+        fittingService.saveTask(task);
+        return ResponseEntity.ok(ApiResponse.success("저장 완료", null));
     }
 
 
@@ -141,18 +155,16 @@ public class VirtualFittingController {
 
 	@Operation(
 		summary = "스타일 추천",
-		description = "검색어(자연어)와 유사한 가상 피팅 결과를 최대 10개 추천합니다. userId를 넣으면 해당 사용자 성별과 같은 스타일만 반환됩니다."
+		description = "검색어(자연어)와 유사한 가상 피팅 결과를 최대 10개 추천합니다. 로그인 사용자 성별에 맞는 스타일만 반환, 유사도 0.7 이상."
 	)
 	@GetMapping("/recommend")
 	public ResponseEntity<ApiResponse<StyleRecommendationResponse>> recommendByStyle(
 		@Parameter(description = "검색어 (예: 결혼식에 입고 갈 단정하고 깔끔한 스타일 추천해줘)", required = true)
 		@RequestParam("query") String query,
-		@Parameter(description = "최소 유사도 점수 (0~1). 이 점수 이상만 반환. 생략 시 필터 없음.")
-		@RequestParam(value = "minScore", required = false) Double minScore,
-		@Parameter(description = "사용자 ID. 로그인 유저 ID를 보내면 해당 성별의 스타일만 추천됨. 생략 시 성별 필터 없음.")
-		@RequestParam(value = "userId", required = false) Long userId
+		@AuthenticationPrincipal CustomUserDetails userDetails
 	) {
-		var recommendations = styleRecommendationService.recommendByStyle(query, minScore, userId);
+		Long userId = userDetails.getUser().getId();
+		var recommendations = styleRecommendationService.recommendByStyle(query, 0.7, userId);
 		StyleRecommendationResponse body = StyleRecommendationResponse.from(recommendations);
 		return ResponseEntity.ok(ApiResponse.success("스타일 추천 결과", body));
 	}

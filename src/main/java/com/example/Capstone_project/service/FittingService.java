@@ -1,5 +1,6 @@
 package com.example.Capstone_project.service;
 
+import com.example.Capstone_project.dto.SavedFittingResponseDto;
 import com.example.Capstone_project.dto.StyleAnalysisResult;
 import com.example.Capstone_project.dto.VirtualFittingResponse;
 import com.example.Capstone_project.domain.FittingStatus;
@@ -319,9 +320,22 @@ public class FittingService {
         return result;
     }
 
+    @Transactional
+    public void saveTask(FittingTask task) {
+        fittingRepository.save(task);
+    }
+
     @Transactional(readOnly = true)
     public List<FittingTask> getSavedFittingList(Long userId) {
         return fittingRepository.findByUserIdAndIsSavedTrue(userId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<SavedFittingResponseDto> getSavedFittingListAsDtos(Long userId) {
+        List<FittingTask> tasks = fittingRepository.findByUserIdAndIsSavedTrueWithClothes(userId);
+        return tasks.stream()
+                .map(SavedFittingResponseDto::from)
+                .toList();
     }
 
 }

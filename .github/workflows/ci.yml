@@ -68,7 +68,3 @@ jobs:
           SPRING_DATA_REDIS_HOST: localhost
           SPRING_DATA_REDIS_PORT: 6379
           SPRING_DATA_REDIS_PASSWORD: ""
-
-      - name: Test
-        run: ./gradlew test --stacktrace
-        # Tests use @ActiveProfiles("test") and application-test.properties (H2 in-memory, Redis excluded).

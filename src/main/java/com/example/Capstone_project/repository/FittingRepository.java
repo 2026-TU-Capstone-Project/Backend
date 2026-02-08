@@ -2,15 +2,19 @@ package com.example.Capstone_project.repository;
 
 import com.example.Capstone_project.domain.FittingTask;
 import org.springframework.data.jpa.repository.JpaRepository;
-import java.util.List;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+
+import java.util.List;
 
 @Repository
 public interface FittingRepository extends JpaRepository<FittingTask, Long> {
 
     List<FittingTask> findByUserIdAndIsSavedTrue(Long userId);
+
+    @Query("SELECT DISTINCT ft FROM FittingTask ft LEFT JOIN FETCH ft.top LEFT JOIN FETCH ft.bottom WHERE ft.userId = :userId AND ft.isSaved = true")
+    List<FittingTask> findByUserIdAndIsSavedTrueWithClothes(@Param("userId") Long userId);
 
     /**
      * pgvector 유사도 검색 + 거리(distance) 반환, maxDistance 이하만 반환
