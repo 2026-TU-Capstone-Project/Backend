@@ -4,9 +4,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
-import org.springframework.http.codec.ClientCodecConfigurer;
 import org.springframework.web.reactive.function.client.ExchangeStrategies;
 import org.springframework.web.reactive.function.client.WebClient;
 
@@ -14,29 +11,12 @@ import org.springframework.web.reactive.function.client.WebClient;
 @Configuration
 public class WebClientConfig {
 	
-	// BitStudio API
-	@Value("${bitstudio.api.base-url:https://api.bitstudio.ai}")
-	private String bitStudioBaseUrl;
-	
-	@Value("${bitstudio.api.key:bs_ZeFNv6yw9AoSmnrR95lAXrIpH5Y1ijl}")
-	private String bitStudioApiKey;
-	
 	// Gemini API (Nano Banana Pro)
 	@Value("${gemini.api.base-url:https://generativelanguage.googleapis.com/v1beta}")
 	private String geminiBaseUrl;
 	
-	@Value("${gemini.api.key:}")
+	@Value("${gemini.api.key}")
 	private String geminiApiKey;
-	
-	@Bean
-	public WebClient bitStudioWebClient() {
-		log.info("Creating BitStudio WebClient with baseUrl: {}", bitStudioBaseUrl);
-		log.info("API Key configured: {}", bitStudioApiKey.isEmpty() ? "NOT SET" : "SET");
-		return WebClient.builder()
-			.baseUrl(bitStudioBaseUrl)
-			.defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + bitStudioApiKey)
-			.build();
-	}
 	
 	@Bean
 	public WebClient geminiWebClient() {

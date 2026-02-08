@@ -10,23 +10,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface FittingRepository extends JpaRepository<FittingTask, Long> {
 
-    public interface FittingRepository extends JpaRepository<FittingTask, Long> {
-
-        List<FittingTask> findByUserIdAndIsSavedTrue(Long userId);
-    }
-    /**
-     * pgvector 코사인 유사도 검색 (<=> 연산자)
-     * style_embedding은 TEXT에 "[0.1,0.2,...]" 형식으로 저장, 쿼리에서 vector로 캐스팅
-     * queryVector: "[0.1,0.2,...]" 형식의 1536차원 벡터 문자열
-     * 최대 10개 반환
-     */
-    @Query(value = """
-        SELECT * FROM fitting_tasks
-        WHERE style_embedding IS NOT NULL
-        ORDER BY style_embedding <=> CAST(:queryVector AS vector)
-        LIMIT 10
-        """, nativeQuery = true)
-    List<FittingTask> findSimilarByStyleEmbedding(@Param("queryVector") String queryVector);
+    List<FittingTask> findByUserIdAndIsSavedTrue(Long userId);
 
     /**
      * pgvector 유사도 검색 + 거리(distance) 반환, maxDistance 이하만 반환

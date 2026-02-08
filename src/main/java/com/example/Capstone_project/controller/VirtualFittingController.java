@@ -88,7 +88,8 @@ public class VirtualFittingController {
                             topImageFilename,
                             bottomImageBytes,
                             bottomImageFilename,
-                            clothesAnalysisService
+                            clothesAnalysisService,
+                            user
                     );
 
                 } catch (Exception e) {
@@ -105,18 +106,6 @@ public class VirtualFittingController {
         }
     }
 
-    @Operation(summary = "피팅 결과 내 옷장 저장")
-    @PatchMapping("/{taskId}/save")
-    public ResponseEntity<ApiResponse<String>> saveFittingResult(@PathVariable Long taskId) {
-        FittingTask task = fittingService.checkStatus(taskId);
-        if (task == null) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponse.error("기록 없음"));
-        }
-
-        task.setSaved(true);
-        fittingService.saveTask(task);
-        return ResponseEntity.ok(ApiResponse.success("저장 완료", null));
-    }
 
     @Operation(summary = "내가 저장한 코디 목록 조회")
     @GetMapping("/my-closet")
@@ -126,26 +115,6 @@ public class VirtualFittingController {
         return ResponseEntity.ok(ApiResponse.success("조회 성공", savedList));
     }
 
-    @Operation(summary = "이미지 조회")
-    @GetMapping("/images/{filename}")
-    public ResponseEntity<Resource> getVirtualFittingImage(@PathVariable String filename) {
-        try {
-            Path filePath = Paths.get(imageStoragePath).resolve(filename);
-            File file = filePath.toFile();
-
-            if (!file.exists()) return ResponseEntity.notFound().build();
-
-            Resource resource = new FileSystemResource(file);
-            String contentType = Files.probeContentType(filePath);
-
-            return ResponseEntity.ok()
-                    .contentType(MediaType.parseMediaType(contentType != null ? contentType : "application/octet-stream"))
-                    .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + filename + "\"")
-                    .body(resource);
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
-        }
-    }
 
 	@Operation(
 		summary = "가상 피팅 작업 상태 조회",
