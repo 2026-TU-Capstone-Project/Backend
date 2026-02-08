@@ -21,7 +21,7 @@ import java.util.List;
 @Tag(name = "Clothes Set API", description = "코디 세트(폴더) 관리 및 조회 API")
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/api/clothes-sets")
+@RequestMapping("/api/v1/clothes-sets")
 public class ClothesSetController {
 
     private final ClothesSetService clothesSetService;

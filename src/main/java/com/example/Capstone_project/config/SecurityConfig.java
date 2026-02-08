@@ -49,7 +49,7 @@ public class SecurityConfig {
 						.requestMatchers("/swagger-ui/**", "/swagger-ui.html").permitAll()
 
 						// 로그인/회원가입 경로
-						.requestMatchers("/api/auth/**").permitAll()
+						.requestMatchers("/api/v1/auth/**").permitAll()
 						.requestMatchers("/login/oauth2/**", "/oauth2/**").permitAll()
 
 						// 나머지 보호
@@ -62,7 +62,7 @@ public class SecurityConfig {
 						.successHandler(oAuth2SuccessHandler)
 				)
                 .logout(logout -> logout
-                        .logoutUrl("/api/auth/logout") // 로그아웃을 실행할 주소
+                        .logoutUrl("/api/v1/auth/logout") // 로그아웃을 실행할 주소
                         .logoutSuccessHandler((request, response, authentication) -> {
                             // 로그아웃 성공 시 스웨거로 보냄
                             response.sendRedirect("/swagger-ui/index.html");
