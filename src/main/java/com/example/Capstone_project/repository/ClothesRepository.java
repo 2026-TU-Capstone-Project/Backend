@@ -8,6 +8,6 @@ import java.util.List;
 
 @Repository
 public interface ClothesRepository extends JpaRepository<Clothes, Long> {
-    // 나중에 검색 기능 필요하면 여기에 추가 (findByCategory 등)
     List<Clothes> findByUserOrderByCreatedAtDesc(User user);
+    List<Clothes> findByUserAndCategoryOrderByCreatedAtDesc(User user, String category);
 }

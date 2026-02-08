@@ -2,9 +2,11 @@ package com.example.Capstone_project.controller;
 
 import com.example.Capstone_project.common.dto.ApiResponse;
 import com.example.Capstone_project.domain.Clothes;
+import com.example.Capstone_project.domain.User;
+import com.example.Capstone_project.dto.ClothesRequestDto;
+import com.example.Capstone_project.dto.ClothesResponseDto;
 import com.example.Capstone_project.repository.ClothesRepository;
 import com.example.Capstone_project.service.ClothesAnalysisService;
-import com.example.Capstone_project.dto.ClothesRequestDto;
 import com.example.Capstone_project.service.GoogleCloudStorageService;
 import com.example.Capstone_project.config.CustomUserDetails;
 import io.swagger.v3.oas.annotations.Operation;
@@ -19,6 +21,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.util.List;
 
 @Tag(name = "Clothes", description = "옷 등록·분석·조회·삭제")
@@ -33,7 +36,7 @@ public class ClothesController {
     private final GoogleCloudStorageService gcsService;
 
     @Operation(
-        summary = "옷 1건 등록",
+        summary = "옷 등록",
         description = "옷 사진 1장을 업로드하여 AI 분석 후 저장합니다. **비동기 처리** → 즉시 202 Accepted 반환, 백그라운드에서 분석·저장됩니다."
     )
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -50,77 +53,99 @@ public class ClothesController {
                     .body(ApiResponse.error("File is required"));
         }
 
-        // 비동기로 옷 분석 및 저장 시작
-        clothesAnalysisService.analyzeAndSaveClothesAsync(file, category, userDetails.getUser());
-        
+        try {
+            // 요청 처리 전에 바이트를 먼저 읽어야 함 (MultipartFile 임시파일은 요청 종료 시 삭제됨)
+            byte[] imageBytes = file.getBytes();
+            String filename = file.getOriginalFilename();
+            clothesAnalysisService.analyzeAndSaveClothesAsync(imageBytes, filename, category, userDetails.getUser());
+        } catch (IOException e) {
+            log.error("파일 읽기 실패", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("파일 읽기 실패: " + e.getMessage()));
+        }
+
         log.info("✅ 옷 등록 요청 완료 - category: {} (비동기 처리 중)", category);
         return ResponseEntity.status(HttpStatus.ACCEPTED)
                 .body(ApiResponse.success("Clothes registration started. Processing in background.", 
                         "옷 등록이 시작되었습니다. 백그라운드에서 분석 및 저장이 진행됩니다."));
     }
 
+    // @Operation(
+    //     summary = "옷 일괄 분석",
+    //     description = "상의·하의·신발을 한 번에 업로드하여 동기로 분석·저장합니다. 각 필드는 선택적으로 업로드 가능합니다."
+    // )
+    // @PostMapping(value = "/analysis", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    // public ResponseEntity<ApiResponse<String>> analyze(
+    //         @ModelAttribute ClothesRequestDto requestDto,
+    //         @AuthenticationPrincipal CustomUserDetails userDetails
+    // ) {
+    //     log.info("👕 Clothes analysis request received");
+
+    //     // 1. 유저 정보 가져오기 (userDetails에서 추출)
+    //     com.example.Capstone_project.domain.User user = userDetails.getUser();
+
+    //     try {
+    //         // 2. DTO에서 파일을 하나씩 꺼내서 동기(Sync) 방식으로 즉시 처리
+    //         // 상의 분석
+    //         if (requestDto.getTop() != null && !requestDto.getTop().isEmpty()) {
+    //             clothesAnalysisService.analyzeAndSaveClothesSync(requestDto.getTop(), "Top", user);
+    //         }
+    //         // 하의 분석
+    //         if (requestDto.getBottom() != null && !requestDto.getBottom().isEmpty()) {
+    //             clothesAnalysisService.analyzeAndSaveClothesSync(requestDto.getBottom(), "Bottom", user);
+    //         }
+    //         // 신발 분석
+    //         if (requestDto.getShoes() != null && !requestDto.getShoes().isEmpty()) {
+    //             clothesAnalysisService.analyzeAndSaveClothesSync(requestDto.getShoes(), "Shoes", user);
+    //         }
+
+    //         // 모든 작업이 끝나면 성공 응답 반환
+    //         return ResponseEntity.ok(ApiResponse.success("모든 옷 등록 및 분석 성공!", "분석 완료"));
+
+    //     } catch (Exception e) {
+    //         log.error("❌ 분석 중 오류 발생", e);
+    //         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+    //                 .body(ApiResponse.error("분석 중 오류가 발생했습니다: " + e.getMessage()));
+    //     }
+    // }
+
     @Operation(
-        summary = "옷 일괄 분석",
-        description = "상의·하의·신발을 한 번에 업로드하여 동기로 분석·저장합니다. 각 필드는 선택적으로 업로드 가능합니다."
+        summary = "내 옷장 카테고리별 목록 조회",
+        description = "로그인한 사용자의 옷 목록을 최신순으로 조회합니다. category로 필터링 가능 (전체/Top/Bottom/Shoes)"
     )
-    @PostMapping(value = "/analysis", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<ApiResponse<String>> analyze(
-            @ModelAttribute ClothesRequestDto requestDto,
-            @AuthenticationPrincipal CustomUserDetails userDetails
-    ) {
-        log.info("👕 Clothes analysis request received");
-
-        // 1. 유저 정보 가져오기 (userDetails에서 추출)
-        com.example.Capstone_project.domain.User user = userDetails.getUser();
-
-        try {
-            // 2. DTO에서 파일을 하나씩 꺼내서 동기(Sync) 방식으로 즉시 처리
-            // 상의 분석
-            if (requestDto.getTop() != null && !requestDto.getTop().isEmpty()) {
-                clothesAnalysisService.analyzeAndSaveClothesSync(requestDto.getTop(), "Top", user);
-            }
-            // 하의 분석
-            if (requestDto.getBottom() != null && !requestDto.getBottom().isEmpty()) {
-                clothesAnalysisService.analyzeAndSaveClothesSync(requestDto.getBottom(), "Bottom", user);
-            }
-            // 신발 분석
-            if (requestDto.getShoes() != null && !requestDto.getShoes().isEmpty()) {
-                clothesAnalysisService.analyzeAndSaveClothesSync(requestDto.getShoes(), "Shoes", user);
-            }
-
-            // 모든 작업이 끝나면 성공 응답 반환
-            return ResponseEntity.ok(ApiResponse.success("모든 옷 등록 및 분석 성공!", "분석 완료"));
-
-        } catch (Exception e) {
-            log.error("❌ 분석 중 오류 발생", e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(ApiResponse.error("분석 중 오류가 발생했습니다: " + e.getMessage()));
-        }
-    }
-
-    @Operation(summary = "내 옷장 목록 조회", description = "로그인한 사용자의 옷 목록을 최신순으로 조회합니다.")
     @GetMapping
-    public ResponseEntity<ApiResponse<List<Clothes>>> getAllClothes(
+    public ResponseEntity<ApiResponse<List<ClothesResponseDto>>> getAllClothes(
+            @Parameter(description = "카테고리 필터: 전체(생략가능), Top, Bottom, Shoes") @RequestParam(value = "category", required = false) String category,
             @AuthenticationPrincipal CustomUserDetails userDetails
     ) {
-        // 내 옷만 최신순으로 가져오도록 수정
-        List<Clothes> clothesList = clothesRepository.findByUserOrderByCreatedAtDesc(userDetails.getUser());
-        return ResponseEntity.ok(ApiResponse.success("내 옷장 목록 조회 성공", clothesList));
+        User user = userDetails.getUser();
+        List<Clothes> clothesList;
+
+        if (category == null || category.isBlank() || "전체".equals(category)) {
+            clothesList = clothesRepository.findByUserOrderByCreatedAtDesc(user);
+        } else {
+            clothesList = clothesRepository.findByUserAndCategoryOrderByCreatedAtDesc(user, category);
+        }
+
+        List<ClothesResponseDto> dtos = clothesList.stream()
+                .map(ClothesResponseDto::from)
+                .toList();
+        return ResponseEntity.ok(ApiResponse.success("내 옷장 목록 조회 성공", dtos));
     }
 
     @Operation(summary = "옷 상세 조회")
     @GetMapping("/{id}")
-    public ResponseEntity<ApiResponse<Clothes>> getClothesById(
+    public ResponseEntity<ApiResponse<ClothesResponseDto>> getClothesById(
             @Parameter(description = "옷(Clothes) ID") @PathVariable Long id) {
         Clothes clothes = clothesRepository.findById(id)
                 .orElse(null);
-        
+
         if (clothes == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(ApiResponse.error("Clothes not found: " + id));
         }
-        
-        return ResponseEntity.ok(ApiResponse.success("Clothes retrieved", clothes));
+
+        return ResponseEntity.ok(ApiResponse.success("Clothes retrieved", ClothesResponseDto.from(clothes)));
     }
 
     @Operation(summary = "옷 삭제", description = "본인 소유 옷만 삭제 가능합니다.")

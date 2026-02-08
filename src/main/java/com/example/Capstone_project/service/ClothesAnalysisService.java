@@ -84,11 +84,15 @@ public class ClothesAnalysisService {
 
     // --- 아래의 비동기/동기 래퍼 메서드들은 기존 구조를 그대로 유지하여 에러를 방지합니다 ---
 
+    /**
+     * 비동기 옷 분석. MultipartFile 대신 byte[]를 받아야 함.
+     * (MultipartFile은 요청 종료 시 임시파일이 삭제되므로 @Async에서 getBytes() 호출 시 NoSuchFileException 발생)
+     */
     @Async("taskExecutor")
     @Transactional
-    public void analyzeAndSaveClothesAsync(MultipartFile file, String category, User user) {
+    public void analyzeAndSaveClothesAsync(byte[] imageBytes, String filename, String category, User user) {
         try {
-            analyzeAndSaveClothesInternal(file.getBytes(), file.getOriginalFilename(), category, user);
+            analyzeAndSaveClothesInternal(imageBytes, filename, category, user);
         } catch (IOException e) {
             log.error("❌ 비동기 분석 실패", e);
         }
