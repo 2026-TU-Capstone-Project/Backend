@@ -25,6 +25,11 @@ public class Clothes {
     @JoinColumn(name = "user_id", nullable = false) // DB에 user_id라는 이름으로 주인님 번호가 저장됩니다.
     private User user;
 
+    /** 내 옷장에 표시 여부. true=직접 등록, false=가상피팅 입력용(옷장에 미표시) */
+    @Column(name = "in_closet", nullable = false, columnDefinition = "boolean default true")
+    @Builder.Default
+    private boolean inCloset = true;
+
     // --- [2. 핵심 스펙 (Key Specs)] ---
     private String color;       // Black, Navy...
     private String season;      // Spring, Summer...

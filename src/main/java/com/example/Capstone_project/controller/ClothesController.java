@@ -122,9 +122,9 @@ public class ClothesController {
         List<Clothes> clothesList;
 
         if (category == null || category.isBlank() || "전체".equals(category)) {
-            clothesList = clothesRepository.findByUserOrderByCreatedAtDesc(user);
+            clothesList = clothesRepository.findByUserAndInClosetTrueOrderByCreatedAtDesc(user);
         } else {
-            clothesList = clothesRepository.findByUserAndCategoryOrderByCreatedAtDesc(user, category);
+            clothesList = clothesRepository.findByUserAndInClosetTrueAndCategoryOrderByCreatedAtDesc(user, category);
         }
 
         List<ClothesResponseDto> dtos = clothesList.stream()

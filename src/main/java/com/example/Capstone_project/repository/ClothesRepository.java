@@ -8,6 +8,8 @@ import java.util.List;
 
 @Repository
 public interface ClothesRepository extends JpaRepository<Clothes, Long> {
-    List<Clothes> findByUserOrderByCreatedAtDesc(User user);
-    List<Clothes> findByUserAndCategoryOrderByCreatedAtDesc(User user, String category);
+    /** 내 옷장 목록: 직접 등록한 옷만 (가상피팅 입력용 제외) */
+    List<Clothes> findByUserAndInClosetTrueOrderByCreatedAtDesc(User user);
+    /** 내 옷장 목록 - 카테고리 필터 */
+    List<Clothes> findByUserAndInClosetTrueAndCategoryOrderByCreatedAtDesc(User user, String category);
 }

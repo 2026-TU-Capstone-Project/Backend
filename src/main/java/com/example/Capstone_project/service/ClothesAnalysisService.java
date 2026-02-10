@@ -26,8 +26,9 @@ public class ClothesAnalysisService {
 
     /**
      * 옷 분석 및 저장 내부 로직 (핵심 리팩토링 구간)
+     * @param inCloset true=내 옷장에 표시(직접 등록), false=가상피팅 입력용(옷장에 미표시)
      */
-    private Long analyzeAndSaveClothesInternal(byte[] imageBytes, String filename, String category, User user) throws IOException {
+    private Long analyzeAndSaveClothesInternal(byte[] imageBytes, String filename, String category, User user, boolean inCloset) throws IOException {
 
         // [Step 1] 이미지를 GCS에 업로드 (기존 로직 유지)
         String fileExtension = filename.contains(".") ? filename.substring(filename.lastIndexOf(".")) : ".jpg";
@@ -55,6 +56,7 @@ public class ClothesAnalysisService {
         // [Step 4] DB 저장 (Gemini가 준 데이터를 그대로 매핑)
         Clothes clothes = Clothes.builder()
                 .user(user)
+                .inCloset(inCloset)
                 .category(category)
                 .name(autoName)
                 .imgUrl(imgUrl)
@@ -88,23 +90,28 @@ public class ClothesAnalysisService {
      * 비동기 옷 분석. MultipartFile 대신 byte[]를 받아야 함.
      * (MultipartFile은 요청 종료 시 임시파일이 삭제되므로 @Async에서 getBytes() 호출 시 NoSuchFileException 발생)
      */
+    /** 내 옷장 직접 등록용 - inCloset=true */
     @Async("taskExecutor")
     @Transactional
     public void analyzeAndSaveClothesAsync(byte[] imageBytes, String filename, String category, User user) {
         try {
-            analyzeAndSaveClothesInternal(imageBytes, filename, category, user);
+            analyzeAndSaveClothesInternal(imageBytes, filename, category, user, true);
         } catch (IOException e) {
             log.error("❌ 비동기 분석 실패", e);
         }
     }
 
+    /**
+     * 가상피팅 입력용 - inCloset=false (내 옷장에 미표시)
+     * 내 옷장 직접 등록 시에는 analyzeAndSaveClothesAsync 사용
+     */
     @Transactional
     public Long analyzeAndSaveClothes(byte[] imageBytes, String filename, String category, User user) throws IOException {
-        return analyzeAndSaveClothesInternal(imageBytes, filename, category, user);
+        return analyzeAndSaveClothesInternal(imageBytes, filename, category, user, false);
     }
 
     @Transactional
     public Long analyzeAndSaveClothesSync(MultipartFile file, String category, User user) throws IOException {
-        return analyzeAndSaveClothesInternal(file.getBytes(), file.getOriginalFilename(), category, user);
+        return analyzeAndSaveClothesInternal(file.getBytes(), file.getOriginalFilename(), category, user, true);
     }
 }
