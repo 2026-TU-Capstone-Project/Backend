@@ -119,8 +119,8 @@ public class VirtualFittingController {
         return ResponseEntity.ok(ApiResponse.success("조회 성공", savedList));
     }
 
-    @Operation(summary = "피팅 결과 내 옷장 저장")
-    @PatchMapping("/{taskId}/save")
+    @Operation(summary = "피팅 결과 내 옷장 저장(저장하기)", description = "가상 피팅 결과를 옷장에 저장합니다.")
+    @PatchMapping("/{taskId}")
     public ResponseEntity<ApiResponse<String>> saveFittingResult(@PathVariable Long taskId) {
         FittingTask task = fittingService.checkStatus(taskId);
         if (task == null) {
@@ -132,12 +132,26 @@ public class VirtualFittingController {
         return ResponseEntity.ok(ApiResponse.success("저장 완료", null));
     }
 
+    @Operation(summary = "피팅 결과 삭제 (닫기)", description = "가상 피팅 결과를 삭제합니다. 닫기 버튼 클릭 시 호출. 본인 소유 task만 삭제 가능.")
+    @DeleteMapping("/{taskId}")
+    public ResponseEntity<ApiResponse<String>> discardFittingResult(
+            @Parameter(description = "삭제할 피팅 작업 ID", required = true) @PathVariable Long taskId,
+            @AuthenticationPrincipal CustomUserDetails userDetails
+    ) {
+        Long userId = userDetails.getUser().getId();
+        boolean deleted = fittingService.deleteTask(taskId, userId);
+        if (!deleted) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponse.error("기록 없음 또는 삭제 권한 없음"));
+        }
+        return ResponseEntity.ok(ApiResponse.success("삭제 완료", null));
+    }
+
 
 	@Operation(
 		summary = "가상 피팅 작업 상태 조회",
 		description = "가상 피팅 요청 후 반환된 taskId로 진행 상태를 조회합니다. status가 COMPLETED가 될 때까지 폴링하세요."
 	)
-	@GetMapping("/status/{taskId}")
+	@GetMapping("/{taskId}/status")
 	public ResponseEntity<ApiResponse<VirtualFittingStatusResponse>> getFittingStatus(
 		@Parameter(description = "가상 피팅 작업 ID (createVirtualFitting 응답의 taskId)", required = true) @PathVariable Long taskId) {
 		FittingTask task = fittingService.checkStatus(taskId);
@@ -157,7 +171,7 @@ public class VirtualFittingController {
 		summary = "스타일 추천",
 		description = "검색어(자연어)와 유사한 가상 피팅 결과를 최대 10개 추천합니다. 로그인 사용자 성별에 맞는 스타일만 반환, 유사도 0.7 이상."
 	)
-	@GetMapping("/recommend")
+	@GetMapping("/recommendation/style")
 	public ResponseEntity<ApiResponse<StyleRecommendationResponse>> recommendByStyle(
 		@Parameter(description = "검색어 (예: 결혼식에 입고 갈 단정하고 깔끔한 스타일 추천해줘)", required = true)
 		@RequestParam("query") String query,
