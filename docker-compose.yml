@@ -36,6 +36,7 @@ services:
       retries: 5
     networks:
       - capstone-network
+      
 
   app:
     build: .
@@ -63,6 +64,19 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    networks:
+      - capstone-network
+      
+  nginx:
+    image: nginx:latest
+    container_name: capstone-nginx
+    restart: always
+    ports:
+      - "80:80"  # 외부 80포트를 점유합니다.
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - app
     networks:
       - capstone-network
 
