@@ -48,7 +48,7 @@ public class SecurityConfig {
 						.requestMatchers("/v3/api-docs/**", "/v3/api-docs").permitAll()
 						.requestMatchers("/swagger-ui/**", "/swagger-ui.html").permitAll()
 
-						// 로그인/회원가입 경로
+						// 로그인/회원가입/로그아웃 경로
 						.requestMatchers("/api/v1/auth/**").permitAll()
 						.requestMatchers("/login/oauth2/**", "/oauth2/**").permitAll()
 
@@ -61,16 +61,6 @@ public class SecurityConfig {
 						)
 						.successHandler(oAuth2SuccessHandler)
 				)
-                .logout(logout -> logout
-                        .logoutUrl("/api/v1/auth/logout") // 로그아웃을 실행할 주소
-                        .logoutSuccessHandler((request, response, authentication) -> {
-                            // 로그아웃 성공 시 스웨거로 보냄
-                            response.sendRedirect("/swagger-ui/index.html");
-                        })
-                        .deleteCookies("JSESSIONID") // 세션 쿠키 삭제
-                        .invalidateHttpSession(true)
-                )
-				// JWT 필터
 				.addFilterBefore(new JwtAuthenticationFilter(jwtTokenProvider, userDetailsService),
 						UsernamePasswordAuthenticationFilter.class);
 
