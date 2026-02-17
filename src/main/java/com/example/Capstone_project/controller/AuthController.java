@@ -2,6 +2,7 @@ package com.example.Capstone_project.controller;
 
 import com.example.Capstone_project.domain.User;
 import com.example.Capstone_project.dto.LoginDto;
+import com.example.Capstone_project.dto.RefreshTokenRequestDto;
 import com.example.Capstone_project.dto.SignupDto;
 import com.example.Capstone_project.repository.UserRepository;
 import com.example.Capstone_project.service.AuthService;
@@ -23,6 +24,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import jakarta.validation.Valid;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
 @Tag(name = "Auth", description = "로그인·회원가입·로그아웃 및 소셜 로그인 토큰 교환")
@@ -105,12 +107,8 @@ public class AuthController {
     })
     @SecurityRequirements
     @PostMapping("/token/refresh")
-    public ResponseEntity<?> refreshToken(@RequestBody Map<String, String> request) {
-        String refreshToken = request != null ? request.get("refreshToken") : null;
-        if (refreshToken == null || refreshToken.isBlank()) {
-            return ResponseEntity.badRequest().body("refreshToken이 필요합니다.");
-        }
-
+    public ResponseEntity<?> refreshToken(@Valid @RequestBody RefreshTokenRequestDto request) {
+        String refreshToken = request.getRefreshToken();
         String email = refreshTokenService.getEmailByToken(refreshToken);
         if (email == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("만료되었거나 유효하지 않은 refreshToken입니다.");
@@ -125,15 +123,11 @@ public class AuthController {
         ));
     }
 
-    @Operation(summary = "로그아웃", description = "Redis에 저장된 refreshToken만 삭제. body에 refreshToken 필수.")
+    @Operation(summary = "로그아웃", description = "Redis에 저장된 refreshToken만 삭제.")
     @SecurityRequirements
     @PostMapping("/logout")
-    public ResponseEntity<?> logout(@RequestBody Map<String, String> body) {
-        String refreshToken = (body != null && body.containsKey("refreshToken")) ? body.get("refreshToken") : null;
-        if (refreshToken == null || refreshToken.isBlank()) {
-            return ResponseEntity.badRequest().body("refreshToken이 필요합니다.");
-        }
-        refreshTokenService.invalidate(refreshToken);
+    public ResponseEntity<?> logout(@Valid @RequestBody RefreshTokenRequestDto request) {
+        refreshTokenService.invalidate(request.getRefreshToken());
         return ResponseEntity.ok(Map.of("message", "로그아웃되었습니다."));
     }
 }
