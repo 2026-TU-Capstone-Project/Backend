@@ -30,10 +30,27 @@ public class JwtTokenProvider {
     // 토큰에서 회원 정보 추출
     public String getSubject(String token) {
         return Jwts.parserBuilder()
-                .setSigningKey(io.jsonwebtoken.security.Keys.hmacShaKeyFor(secretKey.getBytes()))
+                .setSigningKey(Keys.hmacShaKeyFor(secretKey.getBytes()))
                 .build()
                 .parseClaimsJws(token)
                 .getBody()
                 .getSubject();
+    }
+
+    /** 토큰 만료까지 남은 초 수 (만료됐으면 0) */
+    public long getTtlSecondsUntilExpiry(String token) {
+        try {
+            Claims claims = Jwts.parserBuilder()
+                    .setSigningKey(Keys.hmacShaKeyFor(secretKey.getBytes()))
+                    .build()
+                    .parseClaimsJws(token)
+                    .getBody();
+            Date exp = claims.getExpiration();
+            if (exp == null) return 0;
+            long remaining = (exp.getTime() - System.currentTimeMillis()) / 1000;
+            return Math.max(0, remaining);
+        } catch (Exception e) {
+            return 0;
+        }
     }
 }
