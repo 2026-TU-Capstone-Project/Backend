@@ -1,6 +1,7 @@
 package com.example.Capstone_project.controller;
 
 import com.example.Capstone_project.domain.User;
+import com.example.Capstone_project.dto.ExchangeTokenRequestDto;
 import com.example.Capstone_project.dto.LoginDto;
 import com.example.Capstone_project.dto.RefreshTokenRequestDto;
 import com.example.Capstone_project.dto.SignupDto;
@@ -78,13 +79,8 @@ public class AuthController {
     })
     @SecurityRequirements
     @PostMapping("/token/exchange")
-    public ResponseEntity<?> exchangeToken(@RequestBody Map<String, String> request) {
-        String rawKey = request.get("key");
-        if (rawKey == null) {
-            return ResponseEntity.badRequest().body("key값이 누락되었습니다.");
-        }
-
-        String redisKey = "TEMP_AUTH:" + rawKey;
+    public ResponseEntity<?> exchangeToken(@Valid @RequestBody ExchangeTokenRequestDto request) {
+        String redisKey = "TEMP_AUTH:" + request.getKey();
         String accessToken = redisTemplate.opsForValue().get(redisKey);
 
         if (accessToken != null) {
