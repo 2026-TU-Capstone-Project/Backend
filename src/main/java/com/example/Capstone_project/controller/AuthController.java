@@ -16,32 +16,29 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.HashMap;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus; 
 import org.springframework.http.ResponseEntity;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.crypto.password.PasswordEncoder; 
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.data.redis.core.StringRedisTemplate;
 
-@Tag(name = "Auth", description = "로그인·회원가입 (인증 불필요)")
+@Tag(name = "Auth", description = "로그인·회원가입 및 소셜 로그인 토큰 교환")
 @SecurityRequirements
 @RestController
 @RequestMapping("/api/v1/auth")
-@RequiredArgsConstructor
+@RequiredArgsConstructor 
 public class AuthController {
 
     private final AuthService authService;
-    private final org.springframework.security.crypto.password.PasswordEncoder passwordEncoder;
+    private final PasswordEncoder passwordEncoder;
     private final UserRepository userRepository;
-
-    @Autowired
-    private JwtTokenProvider jwtTokenProvider;
+    private final StringRedisTemplate redisTemplate;
+    private final JwtTokenProvider jwtTokenProvider; 
 
     @Operation(summary = "회원가입", description = "이메일·비밀번호·닉네임으로 회원가입합니다.")
-    @ApiResponses({
-        @ApiResponse(responseCode = "200", description = "가입 성공 메시지"),
-        @ApiResponse(responseCode = "400", description = "중복 이메일 등 유효성 오류")
-    })
     @PostMapping("/signup")
     public ResponseEntity<String> signup(@RequestBody SignupDto signupDto) {
         String result = authService.signup(signupDto);
@@ -49,34 +46,51 @@ public class AuthController {
     }
 
     @Operation(
-        summary = "로그인",
-        description = "이메일·비밀번호로 로그인합니다. 성공 시 **accessToken**을 반환합니다. 이후 API 호출 시 `Authorization: Bearer {accessToken}` 헤더에 넣어 보내세요."
+        summary = "일반 로그인",
+        description = "성공 시 **accessToken**을 반환합니다."
     )
-    @ApiResponses({
-        @ApiResponse(responseCode = "200", description = "로그인 성공",
-            content = @Content(schema = @Schema(description = "accessToken, message, email 포함")))
-    })
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody LoginDto loginDto) {
-        // 3. 아이디(이메일)로 유저 찾기
         User user = userRepository.findByEmail(loginDto.getEmail())
                 .orElseThrow(() -> new IllegalArgumentException("아이디가 존재하지 않습니다."));
 
-        // 4. 비밀번호 일치 확인
         if (!passwordEncoder.matches(loginDto.getPassword(), user.getPassword())) {
-            throw new IllegalArgumentException("비밀번호가 일치하지 않습니다.");
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("비밀번호가 일치하지 않습니다.");
         }
 
-        // 5. 로그인 성공 시 진짜 토큰 생성!
         String token = jwtTokenProvider.createToken(user.getEmail());
 
-        // 6. 리턴할 데이터 보따리(Map) 구성
         Map<String, Object> response = new HashMap<>();
-        response.put("accessToken", token); // 포스트맨에서 복사할 핵심!
+        response.put("accessToken", token);
         response.put("message", "반가워요, " + user.getNickname() + "님!");
         response.put("email", user.getEmail());
 
-        // 7. ResponseEntity에 담아서 전송
         return ResponseEntity.ok(response);
+    }
+
+    @Operation(
+        summary = "소셜 로그인 토큰 교환 (Exchange)",
+        description = "소셜 로그인 성공 후 받은 **tempKey**를 이용해 실제 **accessToken**을 발급받습니다."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "교환 성공"),
+        @ApiResponse(responseCode = "401", description = "유효하지 않거나 만료된 키")
+    })
+    @PostMapping("/token/exchange")
+    public ResponseEntity<?> exchangeToken(@RequestBody Map<String, String> request) {
+        String rawKey = request.get("key");
+        if (rawKey == null) {
+            return ResponseEntity.badRequest().body("key값이 누락되었습니다.");
+        }
+
+        String redisKey = "TEMP_AUTH:" + rawKey;
+        String realToken = redisTemplate.opsForValue().get(redisKey);
+
+        if (realToken != null) {
+            redisTemplate.delete(redisKey); 
+            return ResponseEntity.ok(Map.of("accessToken", realToken));
+        } else {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("만료되었거나 유효하지 않은 인증 코드입니다.");
+        }
     }
 }
