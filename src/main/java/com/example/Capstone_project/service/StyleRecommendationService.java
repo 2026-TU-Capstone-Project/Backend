@@ -4,7 +4,7 @@ import com.example.Capstone_project.common.exception.BadRequestException;
 import com.example.Capstone_project.domain.FittingTask;
 import com.example.Capstone_project.dto.FittingTaskWithScore;
 import com.example.Capstone_project.repository.FittingRepository;
-import com.example.Capstone_project.repository.UserProfileRepository;
+import com.example.Capstone_project.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -29,14 +29,14 @@ public class StyleRecommendationService {
 
     private final GeminiService geminiService;
     private final FittingRepository fittingRepository;
-    private final UserProfileRepository userProfileRepository;
+    private final UserRepository userRepository;
 
     /**
      * 사용자 검색어와 유사한 스타일의 가상 피팅 결과 최대 10개 추천
      *
      * @param userQuery 예: "결혼식에 입고 갈 단정하고 깔끔한 스타일 추천해줘"
      * @param minScore  최소 유사도 점수 (0~1, null이면 필터 없음). 예: 0.5 → 점수 0.5 이상만 반환
-     * @param userId    로그인 사용자 ID. 있으면 해당 사용자 성별과 같은 스타일만 추천 (UserProfile.gender)
+     * @param userId    로그인 사용자 ID. 있으면 해당 사용자 성별과 같은 스타일만 추천 (User.gender)
      * @return 유사도 순 정렬된 (FittingTask, score) 리스트 (최대 10개)
      */
     @Transactional(readOnly = true)
@@ -48,11 +48,11 @@ public class StyleRecommendationService {
             throw new BadRequestException("minScore는 0~1 사이여야 합니다.");
         }
 
-        // 성별 필터: userId가 있으면 UserProfile에서 성별 조회
+        // 성별 필터: userId가 있으면 User에서 성별 조회
         String genderFilter = null;
         if (userId != null) {
-            genderFilter = userProfileRepository.findByUser_Id(userId)
-                .map(up -> up.getGender().name())
+            genderFilter = userRepository.findById(userId)
+                .map(u -> u.getGender() != null ? u.getGender().name() : null)
                 .orElse(null);
         }
 

@@ -21,7 +21,7 @@ public class User {
     @Column(name = "user_id")
     private Long id;
 
-    @Column(nullable = false, length = 50, unique = true)
+    @Column(nullable = true, length = 50)
     private String username;
 
     @Column(nullable = false, length = 30, unique = true)
@@ -34,7 +34,7 @@ public class User {
     private String password;
 
     // nickname 추가
-    @Column(nullable = false)
+    @Column(nullable = true)
     private String nickname;
 
     private String role;
@@ -45,6 +45,16 @@ public class User {
     @Enumerated(EnumType.STRING)
     @Column(name = "social_provider", length = 20)
     private SocialProvider socialProvider;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "gender", length = 10)
+    private Gender gender;
+
+    @Column(name = "height")
+    private Float height;
+
+    @Column(name = "weight")
+    private Float weight;
 
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
