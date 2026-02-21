@@ -20,6 +20,12 @@ public class GlobalExceptionHandler {
 		return ResponseEntity.status(HttpStatus.BAD_REQUEST)
 			.body(ApiResponse.error(e.getMessage()));
 	}
+
+	@ExceptionHandler(IllegalArgumentException.class)
+	public ResponseEntity<ApiResponse<?>> handleIllegalArgument(IllegalArgumentException e) {
+		return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+			.body(ApiResponse.error(e.getMessage()));
+	}
 	
 	@ExceptionHandler(Exception.class)
 	public ResponseEntity<ApiResponse<?>> handleException(Exception e) {
