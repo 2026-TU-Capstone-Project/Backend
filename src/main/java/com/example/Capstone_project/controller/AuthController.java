@@ -1,7 +1,8 @@
 package com.example.Capstone_project.controller;
 
 import com.example.Capstone_project.domain.User;
-import com.example.Capstone_project.dto.ExchangeTokenRequestDto;
+import com.example.Capstone_project.dto.GoogleLoginRequestDto;
+import com.example.Capstone_project.dto.KakaoLoginRequestDto;
 import com.example.Capstone_project.dto.LoginDto;
 import com.example.Capstone_project.dto.RefreshTokenRequestDto;
 import com.example.Capstone_project.dto.SignupDto;
@@ -9,8 +10,6 @@ import com.example.Capstone_project.repository.UserRepository;
 import com.example.Capstone_project.service.AuthService;
 import com.example.Capstone_project.config.JwtTokenProvider;
 import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.media.Content;
-import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirements;
@@ -26,9 +25,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import jakarta.validation.Valid;
-import org.springframework.data.redis.core.StringRedisTemplate;
 
-@Tag(name = "Auth", description = "로그인·회원가입·로그아웃 및 소셜 로그인 토큰 교환")
+@Tag(name = "Auth", description = "로그인·회원가입·로그아웃 및 소셜 로그인(Native SDK)")
 @RestController
 @RequestMapping("/api/v1/auth")
 @RequiredArgsConstructor 
@@ -37,11 +35,15 @@ public class AuthController {
     private final AuthService authService;
     private final PasswordEncoder passwordEncoder;
     private final UserRepository userRepository;
-    private final StringRedisTemplate redisTemplate;
     private final JwtTokenProvider jwtTokenProvider;
-    private final com.example.Capstone_project.service.RefreshTokenService refreshTokenService; 
+    private final com.example.Capstone_project.service.RefreshTokenService refreshTokenService;
+    private final com.example.Capstone_project.service.SocialAuthService socialAuthService; 
 
     @Operation(summary = "회원가입", description = "이메일·비밀번호·닉네임으로 회원가입합니다.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "회원가입 성공"),
+        @ApiResponse(responseCode = "400", description = "유효성 검증 실패(중복 이메일 등)")
+    })
     @SecurityRequirements
     @PostMapping("/signup")
     public ResponseEntity<String> signup(@RequestBody SignupDto signupDto) {
@@ -50,6 +52,10 @@ public class AuthController {
     }
 
     @Operation(summary = "일반 로그인", description = "성공 시 **accessToken**과 **refreshToken**을 반환합니다. accessToken 만료 시 refreshToken으로 /token/refresh 호출.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "로그인 성공 (accessToken, refreshToken, message, email 반환)"),
+        @ApiResponse(responseCode = "401", description = "아이디 없음 또는 비밀번호 불일치")
+    })
     @SecurityRequirements
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody LoginDto loginDto) {
@@ -72,28 +78,52 @@ public class AuthController {
         return ResponseEntity.ok(response);
     }
 
-    @Operation(summary = "소셜 로그인 토큰 교환 (Exchange)", description = "소셜 로그인 성공 후 받은 **tempKey**로 **accessToken**과 **refreshToken** 발급.")
+    @Operation(summary = "Google 로그인 (Native SDK)", description = "앱에서 Google Sign-In SDK로 받은 **idToken**을 보내면 서버가 검증 후 우리 accessToken·refreshToken 발급.")
     @ApiResponses({
-        @ApiResponse(responseCode = "200", description = "교환 성공"),
-        @ApiResponse(responseCode = "401", description = "유효하지 않거나 만료된 키")
+        @ApiResponse(responseCode = "200", description = "로그인 성공"),
+        @ApiResponse(responseCode = "400", description = "idToken 누락 또는 형식 오류"),
+        @ApiResponse(responseCode = "401", description = "idToken 검증 실패")
     })
     @SecurityRequirements
-    @PostMapping("/token/exchange")
-    public ResponseEntity<?> exchangeToken(@Valid @RequestBody ExchangeTokenRequestDto request) {
-        String redisKey = "TEMP_AUTH:" + request.getKey();
-        String accessToken = redisTemplate.opsForValue().get(redisKey);
+    @PostMapping("/google")
+    public ResponseEntity<?> loginWithGoogle(@Valid @RequestBody GoogleLoginRequestDto request) {
+        Map<String, String> info = socialAuthService.verifyGoogleIdToken(request.getIdToken());
+        User user = socialAuthService.findOrCreateGoogleUser(
+                info.get("email"),
+                info.get("name")
+        );
+        String accessToken = jwtTokenProvider.createToken(user.getEmail());
+        String refreshToken = refreshTokenService.createAndStore(user.getEmail());
+        Map<String, Object> response = new HashMap<>();
+        response.put("accessToken", accessToken);
+        response.put("refreshToken", refreshToken);
+        response.put("message", "반가워요, " + user.getNickname() + "님!");
+        response.put("email", user.getEmail());
+        return ResponseEntity.ok(response);
+    }
 
-        if (accessToken != null) {
-            redisTemplate.delete(redisKey);
-            String email = jwtTokenProvider.getSubject(accessToken);
-            String refreshToken = refreshTokenService.createAndStore(email);
-            return ResponseEntity.ok(Map.of(
-                    "accessToken", accessToken,
-                    "refreshToken", refreshToken
-            ));
-        } else {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("만료되었거나 유효하지 않은 인증 코드입니다.");
-        }
+    @Operation(summary = "Kakao 로그인 (Native SDK)", description = "앱에서 Kakao SDK로 받은 **accessToken**을 보내면 서버가 검증 후 우리 accessToken·refreshToken 발급.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "로그인 성공"),
+        @ApiResponse(responseCode = "400", description = "accessToken 누락"),
+        @ApiResponse(responseCode = "401", description = "accessToken 검증 실패")
+    })
+    @SecurityRequirements
+    @PostMapping("/kakao")
+    public ResponseEntity<?> loginWithKakao(@Valid @RequestBody KakaoLoginRequestDto request) {
+        Map<String, String> info = socialAuthService.verifyKakaoAccessToken(request.getAccessToken());
+        User user = socialAuthService.findOrCreateKakaoUser(
+                info.get("email"),
+                info.get("nickname")
+        );
+        String accessToken = jwtTokenProvider.createToken(user.getEmail());
+        String refreshToken = refreshTokenService.createAndStore(user.getEmail());
+        Map<String, Object> response = new HashMap<>();
+        response.put("accessToken", accessToken);
+        response.put("refreshToken", refreshToken);
+        response.put("message", "반가워요, " + user.getNickname() + "님!");
+        response.put("email", user.getEmail());
+        return ResponseEntity.ok(response);
     }
 
     @Operation(summary = "토큰 갱신", description = "refreshToken으로 새 accessToken과 refreshToken을 발급합니다. accessToken 만료 시 클라이언트에서 자동 호출.")
@@ -120,6 +150,10 @@ public class AuthController {
     }
 
     @Operation(summary = "로그아웃", description = "Redis에 저장된 refreshToken만 삭제.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "로그아웃 성공"),
+        @ApiResponse(responseCode = "400", description = "refreshToken 누락")
+    })
     @SecurityRequirements
     @PostMapping("/logout")
     public ResponseEntity<?> logout(@Valid @RequestBody RefreshTokenRequestDto request) {

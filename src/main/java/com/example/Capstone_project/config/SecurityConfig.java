@@ -1,6 +1,5 @@
 package com.example.Capstone_project.config;
 
-import com.example.Capstone_project.service.CustomOAuth2UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -20,17 +19,11 @@ public class SecurityConfig {
 
 	private final JwtTokenProvider jwtTokenProvider;
 	private final UserDetailsService userDetailsService;
-	private final CustomOAuth2UserService customOAuth2UserService;
-	private final OAuth2SuccessHandler oAuth2SuccessHandler;
 
 	public SecurityConfig(JwtTokenProvider jwtTokenProvider,
-						  @Lazy UserDetailsService userDetailsService,
-						  @Lazy CustomOAuth2UserService customOAuth2UserService,
-						  OAuth2SuccessHandler oAuth2SuccessHandler) {
+						  @Lazy UserDetailsService userDetailsService) {
 		this.jwtTokenProvider = jwtTokenProvider;
 		this.userDetailsService = userDetailsService;
-		this.customOAuth2UserService = customOAuth2UserService;
-		this.oAuth2SuccessHandler = oAuth2SuccessHandler;
 	}
 
 	@Bean
@@ -50,16 +43,9 @@ public class SecurityConfig {
 
 						// 로그인/회원가입/로그아웃 경로
 						.requestMatchers("/api/v1/auth/**").permitAll()
-						.requestMatchers("/login/oauth2/**", "/oauth2/**").permitAll()
 
 						// 나머지 보호
 						.anyRequest().authenticated()
-				)
-				.oauth2Login(oauth2 -> oauth2
-						.userInfoEndpoint(userInfo -> userInfo
-								.userService(customOAuth2UserService)
-						)
-						.successHandler(oAuth2SuccessHandler)
 				)
 				.addFilterBefore(new JwtAuthenticationFilter(jwtTokenProvider, userDetailsService),
 						UsernamePasswordAuthenticationFilter.class);

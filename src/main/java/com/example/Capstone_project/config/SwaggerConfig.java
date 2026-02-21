@@ -34,7 +34,7 @@ public class SwaggerConfig {
 					## 주요 기능
 					| 태그 | 설명 |
 					|------|------|
-					| Auth | 로그인, 회원가입 |
+					| Auth | 로그인, 회원가입, 소셜 로그인(Google/Kakao), 토큰 갱신, 로그아웃 |
 					| Virtual Fitting | 가상 피팅 요청·상태 조회·스타일 추천 |
 					| Clothes | 옷 등록·분석·조회·삭제 |
 					| Clothes Set | 코디 폴더(세트) 저장·수정·삭제 |
