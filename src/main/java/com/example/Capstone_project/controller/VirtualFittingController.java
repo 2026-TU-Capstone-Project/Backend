@@ -10,8 +10,10 @@ import com.example.Capstone_project.dto.VirtualFittingStatusResponse;
 import com.example.Capstone_project.dto.VirtualFittingTaskIdResponse;
 import com.example.Capstone_project.service.ClothesAnalysisService;
 import com.example.Capstone_project.service.FittingService;
+import com.example.Capstone_project.service.RedisLockService;
 import com.example.Capstone_project.service.GoogleCloudStorageService;
 import com.example.Capstone_project.service.StyleRecommendationService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -30,12 +32,14 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.data.redis.core.StringRedisTemplate;
 
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
@@ -52,6 +56,9 @@ public class VirtualFittingController {
 	private final GoogleCloudStorageService gcsService;
     private final Executor taskExecutor;
 	private final StyleRecommendationService styleRecommendationService;
+    private final RedisLockService RedisLockService;
+    private final StringRedisTemplate stringRedisTemplate;
+    private final ObjectMapper objectMapper;
 	
 	@Value("${virtual-fitting.image.storage-path:./images/virtual-fitting}")
 	private String imageStoragePath;
@@ -69,6 +76,16 @@ public class VirtualFittingController {
     ) {
         if (userImage.isEmpty() || topImage.isEmpty()) {
             return ResponseEntity.badRequest().body(ApiResponse.error("User image and top image are required"));
+        }
+
+        // ✅ 중복 요청 방지 (Redis Lock)
+        final Long userId = userDetails.getUser().getId();
+        final String lockKey = "lock:fitting-create:" + userId;
+
+        // 30초 동안 동일 유저의 피팅 생성 요청은 1개만 허용
+        if (!RedisLockService.tryLock(lockKey, Duration.ofSeconds(30))) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(ApiResponse.error("이미 가상 피팅 요청이 처리 중입니다. 잠시 후 다시 시도해주세요."));
         }
 
         try {
@@ -151,35 +168,92 @@ public class VirtualFittingController {
 		summary = "가상 피팅 작업 상태 조회",
 		description = "가상 피팅 요청 후 반환된 taskId로 진행 상태를 조회합니다. status가 COMPLETED가 될 때까지 폴링하세요."
 	)
-	@GetMapping("/{taskId}/status")
-	public ResponseEntity<ApiResponse<VirtualFittingStatusResponse>> getFittingStatus(
-		@Parameter(description = "가상 피팅 작업 ID (createVirtualFitting 응답의 taskId)", required = true) @PathVariable Long taskId) {
-		FittingTask task = fittingService.checkStatus(taskId);
-		if (task == null) {
-			return ResponseEntity.status(HttpStatus.NOT_FOUND)
-				.body(ApiResponse.error("Fitting task not found: " + taskId));
-		}
-		VirtualFittingStatusResponse body = new VirtualFittingStatusResponse(
-			task.getId(),
-			task.getStatus(),
-			task.getResultImgUrl()
-		);
-		return ResponseEntity.ok(ApiResponse.success("Fitting task status retrieved", body));
-	}
+    @GetMapping("/{taskId}/status")
+    public ResponseEntity<ApiResponse<VirtualFittingStatusResponse>> getFittingStatus(
+            @PathVariable Long taskId) {
+
+        final String cacheKey = "cache:fitting-status:" + taskId;
+
+        try {
+            // 1) Redis 먼저 조회
+            String cached = stringRedisTemplate.opsForValue().get(cacheKey);
+            if (cached != null) {
+                VirtualFittingStatusResponse cachedBody =
+                        objectMapper.readValue(cached, VirtualFittingStatusResponse.class);
+
+                return ResponseEntity.ok(
+                        ApiResponse.success("Fitting task status retrieved (cached)", cachedBody)
+                );
+            }
+
+            // 2) Redis에 없으면 DB 조회
+            FittingTask task = fittingService.checkStatus(taskId);
+            if (task == null) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(ApiResponse.error("Fitting task not found: " + taskId));
+            }
+
+            VirtualFittingStatusResponse body = new VirtualFittingStatusResponse(
+                    task.getId(),
+                    task.getStatus(),
+                    task.getResultImgUrl()
+            );
+
+            // 3) 10초 캐시 저장(폴링 방지)
+            String json = objectMapper.writeValueAsString(body);
+            stringRedisTemplate.opsForValue().set(cacheKey, json, Duration.ofSeconds(10));
+
+            return ResponseEntity.ok(
+                    ApiResponse.success("Fitting task status retrieved", body)
+            );
+
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("Status retrieval failed: " + e.getMessage()));
+        }
+    }
 
 	@Operation(
 		summary = "스타일 추천",
 		description = "검색어(자연어)와 유사한 가상 피팅 결과를 최대 10개 추천합니다. 로그인 사용자 성별에 맞는 스타일만 반환, 유사도 0.7 이상."
 	)
-	@GetMapping("/recommendation/style")
-	public ResponseEntity<ApiResponse<StyleRecommendationResponse>> recommendByStyle(
-		@Parameter(description = "검색어 (예: 결혼식에 입고 갈 단정하고 깔끔한 스타일 추천해줘)", required = true)
-		@RequestParam("query") String query,
-		@AuthenticationPrincipal CustomUserDetails userDetails
-	) {
-		Long userId = userDetails.getUser().getId();
-		var recommendations = styleRecommendationService.recommendByStyle(query, 0.7, userId);
-		StyleRecommendationResponse body = StyleRecommendationResponse.from(recommendations);
-		return ResponseEntity.ok(ApiResponse.success("스타일 추천 결과", body));
-	}
+    @GetMapping("/recommendation/style")
+    public ResponseEntity<ApiResponse<StyleRecommendationResponse>> recommendByStyle(
+            @RequestParam("query") String query,
+            @AuthenticationPrincipal CustomUserDetails userDetails
+    ) {
+
+        Long userId = userDetails.getUser().getId();
+        final String cacheKey = "cache:style:" + userId + ":" + query;
+
+        try {
+            //Redis 먼저 조회
+            String cached = stringRedisTemplate.opsForValue().get(cacheKey);
+            if (cached != null) {
+                StyleRecommendationResponse cachedBody =
+                        objectMapper.readValue(cached, StyleRecommendationResponse.class);
+
+                return ResponseEntity.ok(
+                        ApiResponse.success("스타일 추천 결과 (cached)", cachedBody)
+                );
+            }
+
+            //실제 추천 실행
+            var recommendations = styleRecommendationService.recommendByStyle(query, 0.7, userId);
+            StyleRecommendationResponse body =
+                    StyleRecommendationResponse.from(recommendations);
+
+            //Redis 60초 캐시
+            String json = objectMapper.writeValueAsString(body);
+            stringRedisTemplate.opsForValue().set(cacheKey, json, Duration.ofSeconds(60));
+
+            return ResponseEntity.ok(
+                    ApiResponse.success("스타일 추천 결과", body)
+            );
+
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("추천 처리 실패: " + e.getMessage()));
+        }
+    }
 }
