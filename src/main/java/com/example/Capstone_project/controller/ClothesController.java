@@ -8,6 +8,7 @@ import com.example.Capstone_project.dto.ClothesResponseDto;
 import com.example.Capstone_project.repository.ClothesRepository;
 import com.example.Capstone_project.service.ClothesAnalysisService;
 import com.example.Capstone_project.service.GoogleCloudStorageService;
+import com.example.Capstone_project.service.RedisLockService;
 import com.example.Capstone_project.config.CustomUserDetails;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -23,6 +24,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.util.List;
+import java.time.Duration;
 
 @Tag(name = "Clothes", description = "옷 등록·분석·조회·삭제")
 @Slf4j
@@ -34,6 +36,7 @@ public class ClothesController {
     private final ClothesRepository clothesRepository;
     private final ClothesAnalysisService clothesAnalysisService;
     private final GoogleCloudStorageService gcsService;
+    private final RedisLockService redisLockService;
 
     @Operation(
         summary = "옷 등록",
@@ -45,7 +48,7 @@ public class ClothesController {
             @Parameter(description = "카테고리 (Top / Bottom / Shoes)", example = "Top", required = true) @RequestParam("category") String category,
             @AuthenticationPrincipal CustomUserDetails userDetails
     ) {
-        log.info("Clothes upload request received - file: {}, category: {}", 
+        log.info("Clothes upload request received - file: {}, category: {}",
                 file.getOriginalFilename(), category);
 
         if (file.isEmpty()) {
@@ -53,20 +56,28 @@ public class ClothesController {
                     .body(ApiResponse.error("File is required"));
         }
 
+        final Long userId = userDetails.getUser().getId();
+        final String lockKey = "lock:clothes-upload:" + userId;
+
+// 1) 락 시도
+        if (!redisLockService.tryLock(lockKey, Duration.ofSeconds(8))) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(ApiResponse.error("이미 옷 등록이 처리 중입니다. 잠시 후 다시 시도해주세요."));
+        }
+
         try {
-            // 요청 처리 전에 바이트를 먼저 읽어야 함 (MultipartFile 임시파일은 요청 종료 시 삭제됨)
             byte[] imageBytes = file.getBytes();
             String filename = file.getOriginalFilename();
             clothesAnalysisService.analyzeAndSaveClothesAsync(imageBytes, filename, category, userDetails.getUser());
         } catch (IOException e) {
-            log.error("파일 읽기 실패", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(ApiResponse.error("파일 읽기 실패: " + e.getMessage()));
         }
 
-        log.info("✅ 옷 등록 요청 완료 - category: {} (비동기 처리 중)", category);
+        // -> “연타 방지” 목적이면 TTL로 자연 해제시키는 게 안전합니다.
+
         return ResponseEntity.status(HttpStatus.ACCEPTED)
-                .body(ApiResponse.success("Clothes registration started. Processing in background.", 
+                .body(ApiResponse.success("Clothes registration started. Processing in background.",
                         "옷 등록이 시작되었습니다. 백그라운드에서 분석 및 저장이 진행됩니다."));
     }
 
