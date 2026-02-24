@@ -118,6 +118,32 @@ public class GoogleCloudStorageService {
     }
 
     /**
+     * 프로필 이미지를 GCS에 업로드하고 공개 URL 반환
+     * profile-images 폴더에 저장
+     *
+     * @param imageBytes 이미지 바이트 배열
+     * @param filename 파일명 (확장자 포함)
+     * @param contentType MIME 타입 (예: "image/jpeg")
+     * @return GCS에 저장된 이미지의 공개 URL
+     */
+    public String uploadProfileImage(byte[] imageBytes, String filename, String contentType) {
+        try {
+            String blobName = "profile-images/" + filename;
+            BlobId blobId = BlobId.of(bucketName, blobName);
+            BlobInfo blobInfo = BlobInfo.newBuilder(blobId)
+                    .setContentType(contentType != null ? contentType : "image/jpeg")
+                    .build();
+            storage.create(blobInfo, imageBytes);
+            String publicUrl = String.format("https://storage.googleapis.com/%s/%s", bucketName, blobName);
+            log.info("✅ 프로필 이미지 GCS 업로드 완료 - URL: {}, 크기: {} bytes", publicUrl, imageBytes.length);
+            return publicUrl;
+        } catch (Exception e) {
+            log.error("❌ GCS 프로필 이미지 업로드 실패: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to upload profile image to GCS: " + e.getMessage(), e);
+        }
+    }
+
+    /**
      * 전신 사진을 GCS에 업로드하고 공개 URL 반환
      * user-body-img 폴더에 저장
      * 
