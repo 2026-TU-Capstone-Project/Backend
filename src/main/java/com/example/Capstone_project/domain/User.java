@@ -21,9 +21,6 @@ public class User {
     @Column(name = "user_id")
     private Long id;
 
-    @Column(nullable = true, length = 50)
-    private String username;
-
     @Column(nullable = false, length = 30, unique = true)
     private String email;
 
@@ -68,8 +65,7 @@ public class User {
     @Column(name = "deleted_at", nullable = false)
     private Boolean deleted = false;
 
-    public User(String username, String email, String password, String nickname, String role) {
-        this.username = username;
+    public User(String email, String password, String nickname, String role) {
         this.email = email;
         this.password = password;
         this.nickname = nickname;
