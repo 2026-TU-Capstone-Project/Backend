@@ -35,7 +35,7 @@ public class UserController {
 
     @Operation(
             summary = "마이페이지 수정하기",
-            description = "수정하기 버튼으로 한 번에 닉네임, 프로필 이미지, 키, 몸무게를 갱신합니다. multipart/form-data로 전송하며, 보내진 필드만 수정됩니다. 프로필 이미지 파일이 있으면 GCS에 저장 후 URL이 저장됩니다."
+            description = "수정하기 버튼으로 한 번에 닉네임, 프로필 이미지, 키, 몸무게, 성별을 갱신합니다. multipart/form-data로 전송하며, 보내진 필드만 수정됩니다. 프로필 이미지 파일이 있으면 GCS에 저장 후 URL이 저장됩니다. 성별은 MALE 또는 FEMALE."
     )
     @PatchMapping(value = "/me", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ApiResponse<UserProfileResponseDto>> updateMyProfile(
@@ -43,6 +43,7 @@ public class UserController {
             @Parameter(description = "닉네임") @RequestParam(value = "nickname", required = false) String nickname,
             @Parameter(description = "키 (cm)") @RequestParam(value = "height", required = false) Float height,
             @Parameter(description = "몸무게 (kg)") @RequestParam(value = "weight", required = false) Float weight,
+            @Parameter(description = "성별 (MALE, FEMALE)") @RequestParam(value = "gender", required = false) String gender,
             @Parameter(description = "프로필 이미지 파일 (선택)") @RequestParam(value = "file", required = false) MultipartFile file
     ) {
         Long userId = userDetails.getUser().getId();
@@ -60,7 +61,7 @@ public class UserController {
             }
         }
         UserProfileResponseDto updated = userService.updateMyProfileWithForm(
-                userId, nickname, height, weight, imageBytes, imageFilename, imageContentType
+                userId, nickname, height, weight, gender, imageBytes, imageFilename, imageContentType
         );
         return ResponseEntity.ok(ApiResponse.success("추가정보가 수정되었습니다.", updated));
     }
