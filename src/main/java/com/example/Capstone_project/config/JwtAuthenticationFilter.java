@@ -28,7 +28,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 UserDetails userDetails = userDetailsService.loadUserByUsername(email);
                 UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
                 SecurityContextHolder.getContext().setAuthentication(auth);
-            } catch (Exception ignored) { /* 유효하지 않은 토큰 */ }
+            } catch (Exception e) {
+                /* 유효하지 않은 토큰 또는 유저 없음 - 원인 확인용 로그 */
+                org.slf4j.LoggerFactory.getLogger(JwtAuthenticationFilter.class)
+                        .warn("JWT auth failed: {} - {}", e.getClass().getSimpleName(), e.getMessage());
+            }
         }
         filterChain.doFilter(request, response);
     }

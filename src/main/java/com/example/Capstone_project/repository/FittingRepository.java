@@ -7,11 +7,15 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface FittingRepository extends JpaRepository<FittingTask, Long> {
 
     List<FittingTask> findByUserIdAndIsSavedTrue(Long userId);
+
+    @Query("SELECT ft FROM FittingTask ft LEFT JOIN FETCH ft.top LEFT JOIN FETCH ft.bottom WHERE ft.id = :id")
+    Optional<FittingTask> findByIdWithClothes(@Param("id") Long id);
 
     @Query("SELECT DISTINCT ft FROM FittingTask ft LEFT JOIN FETCH ft.top LEFT JOIN FETCH ft.bottom WHERE ft.userId = :userId AND ft.isSaved = true")
     List<FittingTask> findByUserIdAndIsSavedTrueWithClothes(@Param("userId") Long userId);
