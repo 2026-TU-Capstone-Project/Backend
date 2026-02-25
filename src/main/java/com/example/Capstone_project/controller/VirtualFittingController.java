@@ -185,7 +185,7 @@ public class VirtualFittingController {
 			throw new com.example.Capstone_project.common.exception.BadRequestException("해당 작업에 대한 권한이 없습니다.");
 		}
 
-		SseEmitter emitter = new SseEmitter(60_000L);
+		SseEmitter emitter = new SseEmitter(300_000L);
 		VirtualFittingStatusResponse current = new VirtualFittingStatusResponse(
 				task.getId(),
 				task.getStatus(),
