@@ -30,7 +30,7 @@ public class VirtualFittingSseService {
      * taskId에 대한 구독 등록. 이미 있으면 기존 연결 완료 후 교체 (1연결 유지).
      */
     public SseEmitter register(Long taskId) {
-        SseEmitter existing = emitters.put(taskId, null); // remove old
+        SseEmitter existing = emitters.remove(taskId);
         if (existing != null) {
             try {
                 existing.complete();
