@@ -13,6 +13,7 @@ import com.example.Capstone_project.service.FittingService;
 import com.example.Capstone_project.service.RedisLockService;
 import com.example.Capstone_project.service.GoogleCloudStorageService;
 import com.example.Capstone_project.service.StyleRecommendationService;
+import com.example.Capstone_project.service.VirtualFittingSseService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -32,6 +33,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
 import java.io.File;
@@ -57,6 +59,7 @@ public class VirtualFittingController {
     private final Executor taskExecutor;
 	private final StyleRecommendationService styleRecommendationService;
     private final RedisLockService RedisLockService;
+    private final VirtualFittingSseService virtualFittingSseService;
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
 	
@@ -165,8 +168,49 @@ public class VirtualFittingController {
 
 
 	@Operation(
-		summary = "가상 피팅 작업 상태 조회",
-		description = "가상 피팅 요청 후 반환된 taskId로 진행 상태를 조회합니다. status가 COMPLETED가 될 때까지 폴링하세요."
+		summary = "가상 피팅 작업 상태 스트림 (SSE)",
+		description = "taskId에 대한 상태 변경을 실시간으로 수신합니다. 연결 시 이미 COMPLETED/FAILED면 현재 상태 1회 전송 후 종료. task당 1연결, 타임아웃 1분."
+	)
+	@GetMapping(value = "/{taskId}/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+	public SseEmitter streamFittingStatus(
+			@Parameter(description = "가상 피팅 작업 ID", required = true) @PathVariable Long taskId,
+			@AuthenticationPrincipal CustomUserDetails userDetails
+	) {
+		Long userId = userDetails.getUser().getId();
+		FittingTask task = fittingService.checkStatus(taskId);
+		if (task == null) {
+			throw new com.example.Capstone_project.common.exception.ResourceNotFoundException("Fitting task not found: " + taskId);
+		}
+		if (!userId.equals(task.getUserId())) {
+			throw new com.example.Capstone_project.common.exception.BadRequestException("해당 작업에 대한 권한이 없습니다.");
+		}
+
+		SseEmitter emitter = new SseEmitter(60_000L);
+		VirtualFittingStatusResponse current = new VirtualFittingStatusResponse(
+				task.getId(),
+				task.getStatus(),
+				task.getResultImgUrl()
+		);
+
+		if (task.getStatus() == com.example.Capstone_project.domain.FittingStatus.COMPLETED
+				|| task.getStatus() == com.example.Capstone_project.domain.FittingStatus.FAILED) {
+			virtualFittingSseService.sendOnceAndComplete(emitter, current);
+			return emitter;
+		}
+
+		SseEmitter registered = virtualFittingSseService.register(taskId);
+		try {
+			registered.send(SseEmitter.event().name("status").data(objectMapper.writeValueAsString(current)));
+		} catch (IOException e) {
+			log.warn("SSE initial send failed for taskId={}", taskId, e);
+			virtualFittingSseService.sendOnceAndComplete(registered, current);
+		}
+		return registered;
+	}
+
+	@Operation(
+		summary = "가상 피팅 작업 상태 조회 (폴링)",
+		description = "가상 피팅 요청 후 반환된 taskId로 진행 상태를 조회합니다. SSE 사용 시 GET /{taskId}/stream 을 사용하세요."
 	)
     @GetMapping("/{taskId}/status")
     public ResponseEntity<ApiResponse<VirtualFittingStatusResponse>> getFittingStatus(

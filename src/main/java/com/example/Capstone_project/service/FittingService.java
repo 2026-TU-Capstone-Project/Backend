@@ -3,6 +3,7 @@ package com.example.Capstone_project.service;
 import com.example.Capstone_project.dto.SavedFittingResponseDto;
 import com.example.Capstone_project.dto.StyleAnalysisResult;
 import com.example.Capstone_project.dto.VirtualFittingResponse;
+import com.example.Capstone_project.dto.VirtualFittingStatusResponse;
 import com.example.Capstone_project.domain.FittingStatus;
 import com.example.Capstone_project.domain.FittingTask;
 import com.example.Capstone_project.domain.User;
@@ -35,6 +36,7 @@ public class FittingService {
     private final ClothesRepository clothesRepository;
     private final GoogleCloudStorageService gcsService;
     private final FittingCleanupService fittingCleanupService;
+    private final VirtualFittingSseService virtualFittingSseService;
     @Qualifier("taskExecutor")
     private final Executor taskExecutor;
 
@@ -140,6 +142,9 @@ public class FittingService {
                 .orElseThrow(() -> new RuntimeException("Task not found: " + taskId));
         task.setStatus(status);
         fittingRepository.save(task);
+        VirtualFittingStatusResponse response = new VirtualFittingStatusResponse(
+                task.getId(), task.getStatus(), task.getResultImgUrl());
+        virtualFittingSseService.notifyStatus(taskId, response);
     }
 
     @Transactional
@@ -149,6 +154,9 @@ public class FittingService {
         task.setStatus(FittingStatus.COMPLETED);
         task.setResultImgUrl(resultImgUrl);
         fittingRepository.save(task);
+        VirtualFittingStatusResponse response = new VirtualFittingStatusResponse(
+                task.getId(), task.getStatus(), task.getResultImgUrl());
+        virtualFittingSseService.notifyStatus(taskId, response);
     }
 
     @Transactional
