@@ -126,7 +126,6 @@ public class SocialAuthService {
                     newUser.setNickname(nickname != null && !nickname.isBlank() ? nickname : email.split("@")[0]);
                     newUser.setSocialProvider(provider);
                     newUser.setPassword("SOCIAL_" + UUID.randomUUID().toString().substring(0, 12));
-                    newUser.setUsername(provider.name() + "_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12));
                     newUser.setRole("ROLE_USER");
                     return userRepository.save(newUser);
                 });

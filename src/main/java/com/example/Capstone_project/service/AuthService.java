@@ -3,7 +3,6 @@ package com.example.Capstone_project.service;
 import com.example.Capstone_project.domain.User;
 import com.example.Capstone_project.dto.LoginDto;
 import com.example.Capstone_project.dto.SignupDto;
-import com.example.Capstone_project.dto.SignupDto;
 import com.example.Capstone_project.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -17,25 +16,25 @@ public class AuthService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
 
-    // 1. 회원가입 기능
     @Transactional
     public String signup(SignupDto signupDto) {
-        // 이메일 중복 검사
         if (userRepository.existsByEmail(signupDto.getEmail())) {
             return "이미 존재하는 이메일입니다.";
         }
 
-        // 비밀번호 암호화
         String encodedPassword = passwordEncoder.encode(signupDto.getPassword());
 
-        // 유저 생성 및 저장
+        // 닉네임은 이메일 @ 앞부분으로 자동 설정
+        String nickname = signupDto.getEmail().split("@")[0];
         User user = new User(
-                signupDto.getUsername(),
                 signupDto.getEmail(),
                 encodedPassword,
-                signupDto.getNickname(),
-                "ROLE_USER" // 기본 권한
+                nickname,
+                "ROLE_USER"
         );
+        if (signupDto.getGender() != null) {
+            user.setGender(signupDto.getGender());
+        }
         userRepository.save(user);
 
         return "회원가입 성공";
