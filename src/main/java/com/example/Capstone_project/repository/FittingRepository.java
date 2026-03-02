@@ -41,4 +41,45 @@ public interface FittingRepository extends JpaRepository<FittingTask, Long> {
         @Param("gender") String gender,
         @Param("limit") int limit
     );
+
+    /**
+     * 내 옷장 전용: 동일 쿼리 + user_id로 해당 사용자 피팅만 검색.
+     */
+    @Query(value = """
+        SELECT ft.id, (ft.style_embedding <=> CAST(:queryVector AS vector)) AS distance
+        FROM fitting_tasks ft
+        WHERE ft.style_embedding IS NOT NULL
+        AND ft.user_id = :userId
+        AND (:maxDistance IS NULL OR (ft.style_embedding <=> CAST(:queryVector AS vector)) <= :maxDistance)
+        AND (:gender IS NULL OR ft.result_gender::text = :gender)
+        ORDER BY distance
+        LIMIT :limit
+        """, nativeQuery = true)
+    List<Object[]> findSimilarIdsWithDistanceByUser(
+        @Param("queryVector") String queryVector,
+        @Param("maxDistance") Double maxDistance,
+        @Param("gender") String gender,
+        @Param("userId") Long userId,
+        @Param("limit") int limit
+    );
+
+    /**
+     * 피드 전용: feeds에 올라온 fitting_task_id만 대상으로 유사도 검색.
+     */
+    @Query(value = """
+        SELECT ft.id, (ft.style_embedding <=> CAST(:queryVector AS vector)) AS distance
+        FROM fitting_tasks ft
+        INNER JOIN feeds f ON f.fitting_task_id = ft.id AND f.deleted_at IS NULL
+        WHERE ft.style_embedding IS NOT NULL
+        AND (:maxDistance IS NULL OR (ft.style_embedding <=> CAST(:queryVector AS vector)) <= :maxDistance)
+        AND (:gender IS NULL OR ft.result_gender::text = :gender)
+        ORDER BY distance
+        LIMIT :limit
+        """, nativeQuery = true)
+    List<Object[]> findSimilarIdsWithDistanceFromFeed(
+        @Param("queryVector") String queryVector,
+        @Param("maxDistance") Double maxDistance,
+        @Param("gender") String gender,
+        @Param("limit") int limit
+    );
 }
