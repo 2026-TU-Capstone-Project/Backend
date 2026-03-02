@@ -247,10 +247,6 @@ public class VirtualFittingController {
         }
     }
 
-
-	@Operation(
-		summary = "스타일 추천",
-		description = "
     @Operation(
             summary = "스타일 추천",
             description = "검색어(자연어)와 유사한 가상 피팅 결과를 최대 10개 추천합니다. 로그인 사용자 성별에 맞는 스타일만 반환, 유사도 0.7 이상."
