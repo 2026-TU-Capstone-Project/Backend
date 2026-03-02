@@ -199,6 +199,10 @@ public class StyleRecommendationService {
                 .toList();
         Map<Long, FittingTask> taskMap = fittingRepository.findAllById(ids).stream()
                 .collect(Collectors.toMap(FittingTask::getId, t -> t));
+            .map(row -> ((Number) row[0]).longValue())
+            .toList();
+        Map<Long, FittingTask> taskMap = fittingRepository.findAllByIdInWithClothes(ids).stream()
+            .collect(Collectors.toMap(FittingTask::getId, t -> t));
 
         // 6. (task, score) 조합. score = 1 - distance
         List<FittingTaskWithScore> results = new ArrayList<>();
@@ -239,6 +243,89 @@ public class StyleRecommendationService {
             return MAX_LIMIT;
         }
         return limit;
+
+    @Transactional(readOnly = true)
+    public List<FittingTaskWithScore> recommendByWeatherStyle(String userQuery, Double minScore, Long userId, double temperature) {
+        List<FittingTaskWithScore> baseResults = recommendByStyle(userQuery, minScore, userId);
+        if (baseResults.isEmpty()) return baseResults;
+
+        TempBucket bucket = TempBucket.from(temperature);
+
+        return baseResults.stream()
+                .map(r -> {
+                    double bonus = calcWeatherBonus(r.getTask(), bucket);
+                    double newScore = clamp01(r.getScore() + bonus);
+                    return new FittingTaskWithScore(r.getTask(), newScore);
+                })
+                .sorted((a, b) -> Double.compare(b.getScore(), a.getScore()))
+                .toList();
+    }
+
+    private enum TempBucket {
+        HOT, MILD, COLD;
+
+        static TempBucket from(double temp) {
+            if (temp >= 25.0) return HOT;
+            if (temp >= 15.0) return MILD;
+            return COLD;
+        }
+    }
+
+    private double calcWeatherBonus(FittingTask task, TempBucket bucket) {
+        if (task == null) return 0.0;
+
+        Clothes top = task.getTop();
+        Clothes bottom = task.getBottom();
+
+        String topSeason = norm(top != null ? top.getSeason() : null);
+        String topThickness = norm(top != null ? top.getThickness() : null);
+        String topSleeve = norm(top != null ? top.getSleeveType() : null);
+
+        String botSeason = norm(bottom != null ? bottom.getSeason() : null);
+        String botThickness = norm(bottom != null ? bottom.getThickness() : null);
+
+        double bonus = 0.0;
+
+        switch (bucket) {
+            case HOT -> {
+                bonus += matchAny(topSeason, "summer") ? 0.05 : 0.0;
+                bonus += matchAny(botSeason, "summer") ? 0.03 : 0.0;
+                bonus += matchAny(topThickness, "thin") ? 0.05 : 0.0;
+                bonus += matchAny(botThickness, "thin") ? 0.03 : 0.0;
+                bonus += matchAny(topSleeve, "short") ? 0.04 : 0.0;
+            }
+            case MILD -> {
+                bonus += matchAny(topSeason, "spring", "fall", "autumn") ? 0.05 : 0.0;
+                bonus += matchAny(botSeason, "spring", "fall", "autumn") ? 0.03 : 0.0;
+                bonus += matchAny(topThickness, "medium") ? 0.05 : 0.0;
+                bonus += matchAny(botThickness, "medium") ? 0.03 : 0.0;
+            }
+            case COLD -> {
+                bonus += matchAny(topSeason, "winter") ? 0.06 : 0.0;
+                bonus += matchAny(botSeason, "winter") ? 0.04 : 0.0;
+                bonus += matchAny(topThickness, "thick") ? 0.06 : 0.0;
+                bonus += matchAny(botThickness, "thick") ? 0.04 : 0.0;
+                bonus += matchAny(topSleeve, "long") ? 0.03 : 0.0;
+            }
+        }
+
+        return Math.min(0.15, bonus);
+    }
+
+    private String norm(String s) {
+        return (s == null) ? "" : s.trim().toLowerCase();
+    }
+
+    private boolean matchAny(String value, String... tokens) {
+        if (value == null || value.isEmpty()) return false;
+        for (String t : tokens) {
+            if (value.contains(t)) return true;
+        }
+        return false;
+    }
+
+    private double clamp01(double v) {
+        return Math.max(0.0, Math.min(1.0, v));
     }
 
     private String toPgVectorString(float[] embedding) {

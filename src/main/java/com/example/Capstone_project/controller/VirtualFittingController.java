@@ -52,23 +52,23 @@ import java.util.concurrent.Executor;
 @RequiredArgsConstructor
 @RequestMapping("/api/v1/virtual-fitting")
 public class VirtualFittingController {
-	
-	private final FittingService fittingService;
-	private final ClothesAnalysisService clothesAnalysisService;
-	private final GoogleCloudStorageService gcsService;
+
+    private final FittingService fittingService;
+    private final ClothesAnalysisService clothesAnalysisService;
+    private final GoogleCloudStorageService gcsService;
     private final Executor taskExecutor;
-	private final StyleRecommendationService styleRecommendationService;
+    private final StyleRecommendationService styleRecommendationService;
     private final RedisLockService RedisLockService;
     private final VirtualFittingSseService virtualFittingSseService;
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
-	
-	@Value("${virtual-fitting.image.storage-path:./images/virtual-fitting}")
-	private String imageStoragePath;
+
+    @Value("${virtual-fitting.image.storage-path:./images/virtual-fitting}")
+    private String imageStoragePath;
 
     @Operation(
-        summary = "가상 피팅 요청",
-        description = "전신 사진 + 상의(필수) + 하의(선택)를 업로드하여 가상 피팅을 요청합니다. **비동기 처리** → 즉시 202 Accepted + taskId 반환. 이후 `/status/{taskId}`로 진행 상태를 폴링하세요."
+            summary = "가상 피팅 요청",
+            description = "전신 사진 + 상의(필수) + 하의(선택)를 업로드하여 가상 피팅을 요청합니다. **비동기 처리** → 즉시 202 Accepted + taskId 반환. 이후 `/status/{taskId}`로 진행 상태를 폴링하세요."
     )
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ApiResponse<VirtualFittingTaskIdResponse>> createVirtualFitting(
@@ -167,51 +167,51 @@ public class VirtualFittingController {
     }
 
 
-	@Operation(
-		summary = "가상 피팅 작업 상태 스트림 (SSE)",
-		description = "taskId에 대한 상태 변경을 실시간으로 수신합니다. 연결 시 이미 COMPLETED/FAILED면 현재 상태 1회 전송 후 종료. task당 1연결, 타임아웃 1분."
-	)
-	@GetMapping(value = "/{taskId}/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-	public SseEmitter streamFittingStatus(
-			@Parameter(description = "가상 피팅 작업 ID", required = true) @PathVariable Long taskId,
-			@AuthenticationPrincipal CustomUserDetails userDetails
-	) {
-		Long userId = userDetails.getUser().getId();
-		FittingTask task = fittingService.checkStatus(taskId);
-		if (task == null) {
-			throw new com.example.Capstone_project.common.exception.ResourceNotFoundException("Fitting task not found: " + taskId);
-		}
-		if (!userId.equals(task.getUserId())) {
-			throw new com.example.Capstone_project.common.exception.BadRequestException("해당 작업에 대한 권한이 없습니다.");
-		}
+    @Operation(
+            summary = "가상 피팅 작업 상태 스트림 (SSE)",
+            description = "taskId에 대한 상태 변경을 실시간으로 수신합니다. 연결 시 이미 COMPLETED/FAILED면 현재 상태 1회 전송 후 종료. task당 1연결, 타임아웃 1분."
+    )
+    @GetMapping(value = "/{taskId}/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter streamFittingStatus(
+            @Parameter(description = "가상 피팅 작업 ID", required = true) @PathVariable Long taskId,
+            @AuthenticationPrincipal CustomUserDetails userDetails
+    ) {
+        Long userId = userDetails.getUser().getId();
+        FittingTask task = fittingService.checkStatus(taskId);
+        if (task == null) {
+            throw new com.example.Capstone_project.common.exception.ResourceNotFoundException("Fitting task not found: " + taskId);
+        }
+        if (!userId.equals(task.getUserId())) {
+            throw new com.example.Capstone_project.common.exception.BadRequestException("해당 작업에 대한 권한이 없습니다.");
+        }
 
-		SseEmitter emitter = new SseEmitter(300_000L);
-		VirtualFittingStatusResponse current = new VirtualFittingStatusResponse(
-				task.getId(),
-				task.getStatus(),
-				task.getResultImgUrl()
-		);
+        SseEmitter emitter = new SseEmitter(300_000L);
+        VirtualFittingStatusResponse current = new VirtualFittingStatusResponse(
+                task.getId(),
+                task.getStatus(),
+                task.getResultImgUrl()
+        );
 
-		if (task.getStatus() == com.example.Capstone_project.domain.FittingStatus.COMPLETED
-				|| task.getStatus() == com.example.Capstone_project.domain.FittingStatus.FAILED) {
-			virtualFittingSseService.sendOnceAndComplete(emitter, current);
-			return emitter;
-		}
+        if (task.getStatus() == com.example.Capstone_project.domain.FittingStatus.COMPLETED
+                || task.getStatus() == com.example.Capstone_project.domain.FittingStatus.FAILED) {
+            virtualFittingSseService.sendOnceAndComplete(emitter, current);
+            return emitter;
+        }
 
-		SseEmitter registered = virtualFittingSseService.register(taskId);
-		try {
-			registered.send(SseEmitter.event().name("status").data(objectMapper.writeValueAsString(current)));
-		} catch (IOException e) {
-			log.warn("SSE initial send failed for taskId={}", taskId, e);
-			virtualFittingSseService.sendOnceAndComplete(registered, current);
-		}
-		return registered;
-	}
+        SseEmitter registered = virtualFittingSseService.register(taskId);
+        try {
+            registered.send(SseEmitter.event().name("status").data(objectMapper.writeValueAsString(current)));
+        } catch (IOException e) {
+            log.warn("SSE initial send failed for taskId={}", taskId, e);
+            virtualFittingSseService.sendOnceAndComplete(registered, current);
+        }
+        return registered;
+    }
 
-	@Operation(
-		summary = "가상 피팅 작업 상태 조회 (폴링)",
-		description = "가상 피팅 요청 후 반환된 taskId로 진행 상태를 조회합니다. SSE 사용 시 GET /{taskId}/stream 을 사용하세요."
-	)
+    @Operation(
+            summary = "가상 피팅 작업 상태 조회 (폴링)",
+            description = "가상 피팅 요청 후 반환된 taskId로 진행 상태를 조회합니다. SSE 사용 시 GET /{taskId}/stream 을 사용하세요."
+    )
     @GetMapping("/{taskId}/status")
     public ResponseEntity<ApiResponse<VirtualFittingStatusResponse>> getFittingStatus(
             @PathVariable Long taskId) {
@@ -257,10 +257,10 @@ public class VirtualFittingController {
         }
     }
 
-	@Operation(
-		summary = "스타일 추천",
-		description = "검색어(자연어)와 유사한 가상 피팅 결과를 최대 10개 추천합니다. 로그인 사용자 성별에 맞는 스타일만 반환, 유사도 0.7 이상."
-	)
+    @Operation(
+            summary = "스타일 추천",
+            description = "검색어(자연어)와 유사한 가상 피팅 결과를 최대 10개 추천합니다. 로그인 사용자 성별에 맞는 스타일만 반환, 유사도 0.7 이상."
+    )
     @GetMapping("/recommendation/style")
     public ResponseEntity<ApiResponse<StyleRecommendationResponse>> recommendByStyle(
             @RequestParam("query") String query,
@@ -295,6 +295,50 @@ public class VirtualFittingController {
                     ApiResponse.success("스타일 추천 결과", body)
             );
 
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("추천 처리 실패: " + e.getMessage()));
+        }
+    }
+
+    @GetMapping("/recommendation/weather-style")
+    public ResponseEntity<ApiResponse<StyleRecommendationResponse>> recommendByWeatherStyle(
+            @RequestParam("query") String query,
+            @RequestParam("temp") double temp,
+            @AuthenticationPrincipal CustomUserDetails userDetails
+    ) {
+        Long userId = userDetails.getUser().getId();
+
+        // temp를 키에 포함 (0.1도 단위로 정규화)
+        String tempKey = String.format(java.util.Locale.US, "%.1f", temp);
+        final String cacheKey = "cache:weather-style:" + userId + ":" + query + ":" + tempKey;
+
+        try {
+            //Redis 먼저 조회
+            String cached = stringRedisTemplate.opsForValue().get(cacheKey);
+            if (cached != null) {
+                StyleRecommendationResponse cachedBody =
+                        objectMapper.readValue(cached, StyleRecommendationResponse.class);
+
+                return ResponseEntity.ok(
+                        ApiResponse.success("날씨 기반 스타일 추천 결과 (cached)", cachedBody)
+                );
+            }
+
+            //실제 추천 실행
+            var recommendations = styleRecommendationService
+                    .recommendByWeatherStyle(query, 0.7, userId, temp);
+
+            StyleRecommendationResponse body =
+                    StyleRecommendationResponse.from(recommendations);
+
+            //Redis 60초 캐시
+            String json = objectMapper.writeValueAsString(body);
+            stringRedisTemplate.opsForValue().set(cacheKey, json, java.time.Duration.ofSeconds(60));
+
+            return ResponseEntity.ok(
+                    ApiResponse.success("날씨 기반 스타일 추천 결과", body)
+            );
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(ApiResponse.error("추천 처리 실패: " + e.getMessage()));
