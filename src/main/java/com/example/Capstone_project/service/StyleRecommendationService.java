@@ -197,10 +197,6 @@ public class StyleRecommendationService {
         List<Long> ids = idWithDistance.stream()
                 .map(row -> ((Number) row[0]).longValue())
                 .toList();
-        Map<Long, FittingTask> taskMap = fittingRepository.findAllById(ids).stream()
-                .collect(Collectors.toMap(FittingTask::getId, t -> t));
-            .map(row -> ((Number) row[0]).longValue())
-            .toList();
         Map<Long, FittingTask> taskMap = fittingRepository.findAllByIdInWithClothes(ids).stream()
             .collect(Collectors.toMap(FittingTask::getId, t -> t));
 
