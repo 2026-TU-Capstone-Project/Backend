@@ -2,6 +2,7 @@ package com.example.Capstone_project.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
@@ -20,13 +21,17 @@ public class RefreshTokenService {
 
     private static final String KEY_PREFIX = "refresh:";
 
-    private final StringRedisTemplate redisTemplate;
+    private final ObjectProvider<StringRedisTemplate> redisTemplateProvider;
 
     @Value("${app.auth.refresh-token-ttl-days:1}")
     private long ttlDays;
 
     /** refreshToken 생성 후 Redis에 저장, 토큰 값 반환 */
     public String createAndStore(String email) {
+        StringRedisTemplate redisTemplate = redisTemplateProvider.getIfAvailable();
+        if (redisTemplate == null) {
+            throw new IllegalStateException("Redis is not configured (StringRedisTemplate bean missing)");
+        }
         String token = UUID.randomUUID().toString().replace("-", "");
         String key = KEY_PREFIX + token;
         redisTemplate.opsForValue().set(key, email, ttlDays, TimeUnit.DAYS);
@@ -37,6 +42,10 @@ public class RefreshTokenService {
     /** refreshToken으로 email 조회. 유효하면 email, 아니면 null */
     public String getEmailByToken(String refreshToken) {
         if (refreshToken == null || refreshToken.isBlank()) return null;
+        StringRedisTemplate redisTemplate = redisTemplateProvider.getIfAvailable();
+        if (redisTemplate == null) {
+            return null;
+        }
         try {
             String key = KEY_PREFIX + refreshToken;
             return redisTemplate.opsForValue().get(key);
@@ -49,6 +58,10 @@ public class RefreshTokenService {
     /** refreshToken 무효화 (로그아웃 시) */
     public void invalidate(String refreshToken) {
         if (refreshToken == null || refreshToken.isBlank()) return;
+        StringRedisTemplate redisTemplate = redisTemplateProvider.getIfAvailable();
+        if (redisTemplate == null) {
+            return;
+        }
         try {
             redisTemplate.delete(KEY_PREFIX + refreshToken);
             log.debug("RefreshToken 무효화 완료");

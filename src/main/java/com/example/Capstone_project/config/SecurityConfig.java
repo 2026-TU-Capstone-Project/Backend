@@ -1,6 +1,5 @@
 package com.example.Capstone_project.config;
 
-import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Lazy;
@@ -37,6 +36,8 @@ public class SecurityConfig {
 				.csrf(csrf -> csrf.disable())
 				.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 				.authorizeHttpRequests(auth -> auth
+						// Actuator 헬스체크 (Docker/로드밸런서용)
+						.requestMatchers("/actuator/health", "/actuator/info").permitAll()
 						// Swagger 및 API 문서
 						.requestMatchers("/v3/api-docs/**", "/v3/api-docs").permitAll()
 						.requestMatchers("/swagger-ui/**", "/swagger-ui.html").permitAll()
