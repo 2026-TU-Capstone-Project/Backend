@@ -31,6 +31,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -60,7 +61,7 @@ public class VirtualFittingController {
     private final StyleRecommendationService styleRecommendationService;
     private final RedisLockService RedisLockService;
     private final VirtualFittingSseService virtualFittingSseService;
-    private final StringRedisTemplate stringRedisTemplate;
+    private final ObjectProvider<StringRedisTemplate> stringRedisTemplateProvider;
     private final ObjectMapper objectMapper;
 
     @Value("${virtual-fitting.image.storage-path:./images/virtual-fitting}")
@@ -219,15 +220,18 @@ public class VirtualFittingController {
         final String cacheKey = "cache:fitting-status:" + taskId;
 
         try {
-            // 1) Redis 먼저 조회
-            String cached = stringRedisTemplate.opsForValue().get(cacheKey);
-            if (cached != null) {
-                VirtualFittingStatusResponse cachedBody =
-                        objectMapper.readValue(cached, VirtualFittingStatusResponse.class);
+            StringRedisTemplate redis = stringRedisTemplateProvider.getIfAvailable();
+            if (redis != null) {
+                // 1) Redis 먼저 조회
+                String cached = redis.opsForValue().get(cacheKey);
+                if (cached != null) {
+                    VirtualFittingStatusResponse cachedBody =
+                            objectMapper.readValue(cached, VirtualFittingStatusResponse.class);
 
-                return ResponseEntity.ok(
-                        ApiResponse.success("Fitting task status retrieved (cached)", cachedBody)
-                );
+                    return ResponseEntity.ok(
+                            ApiResponse.success("Fitting task status retrieved (cached)", cachedBody)
+                    );
+                }
             }
 
             // 2) Redis에 없으면 DB 조회
@@ -245,7 +249,9 @@ public class VirtualFittingController {
 
             // 3) 10초 캐시 저장(폴링 방지)
             String json = objectMapper.writeValueAsString(body);
-            stringRedisTemplate.opsForValue().set(cacheKey, json, Duration.ofSeconds(10));
+            if (redis != null) {
+                redis.opsForValue().set(cacheKey, json, Duration.ofSeconds(10));
+            }
 
             return ResponseEntity.ok(
                     ApiResponse.success("Fitting task status retrieved", body)
@@ -257,6 +263,10 @@ public class VirtualFittingController {
         }
     }
 
+
+	@Operation(
+		summary = "스타일 추천",
+		description = "
     @Operation(
             summary = "스타일 추천",
             description = "검색어(자연어)와 유사한 가상 피팅 결과를 최대 10개 추천합니다. 로그인 사용자 성별에 맞는 스타일만 반환, 유사도 0.7 이상."
@@ -271,15 +281,18 @@ public class VirtualFittingController {
         final String cacheKey = "cache:style:" + userId + ":" + query;
 
         try {
-            //Redis 먼저 조회
-            String cached = stringRedisTemplate.opsForValue().get(cacheKey);
-            if (cached != null) {
-                StyleRecommendationResponse cachedBody =
-                        objectMapper.readValue(cached, StyleRecommendationResponse.class);
+            StringRedisTemplate redis = stringRedisTemplateProvider.getIfAvailable();
+            if (redis != null) {
+                //Redis 먼저 조회
+                String cached = redis.opsForValue().get(cacheKey);
+                if (cached != null) {
+                    StyleRecommendationResponse cachedBody =
+                            objectMapper.readValue(cached, StyleRecommendationResponse.class);
 
-                return ResponseEntity.ok(
-                        ApiResponse.success("스타일 추천 결과 (cached)", cachedBody)
-                );
+                    return ResponseEntity.ok(
+                            ApiResponse.success("스타일 추천 결과 (cached)", cachedBody)
+                    );
+                }
             }
 
             //실제 추천 실행
@@ -289,7 +302,9 @@ public class VirtualFittingController {
 
             //Redis 60초 캐시
             String json = objectMapper.writeValueAsString(body);
-            stringRedisTemplate.opsForValue().set(cacheKey, json, Duration.ofSeconds(60));
+            if (redis != null) {
+                redis.opsForValue().set(cacheKey, json, Duration.ofSeconds(60));
+            }
 
             return ResponseEntity.ok(
                     ApiResponse.success("스타일 추천 결과", body)
