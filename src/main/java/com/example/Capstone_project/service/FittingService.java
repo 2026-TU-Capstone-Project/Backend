@@ -21,8 +21,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 
@@ -61,6 +59,11 @@ public class FittingService {
     }
 
     public void processFitting(Long taskId, byte[] userImgData, String userImageFilename, byte[] topImgData, byte[] bottomImgData) {
+        processFitting(taskId, userImgData, userImageFilename, topImgData, bottomImgData, System.currentTimeMillis());
+    }
+
+    public void processFitting(Long taskId, byte[] userImgData, String userImageFilename, byte[] topImgData, byte[] bottomImgData, long processStartTime) {
+        long startTime = System.currentTimeMillis();
         log.info("🚀 가상 피팅 작업 시작 - Task ID: {}", taskId);
 
         try {
@@ -76,9 +79,12 @@ public class FittingService {
             );
 
             if (response != null && "completed".equals(response.getStatus())) {
-                // 3) 결과 URL과 COMPLETED 상태를 먼저 저장 (빠르게 커밋)
+                // 3) 결과 URL과 COMPLETED 상태를 먼저 저장 → SSE로 클라이언트에 즉시 전달
                 updateFittingTaskResult(taskId, response.getImageUrl());
-                log.info("✅ [작업 완료] URL: {}", response.getImageUrl());
+                long fittingElapsed = System.currentTimeMillis() - startTime;
+                log.info("✅ [작업 완료] URL: {} (Gemini 피팅 소요: {}초)", response.getImageUrl(), String.format("%.1f", fittingElapsed / 1000.0));
+                long userWaitTime = System.currentTimeMillis() - processStartTime;
+                log.info("⚡ [사용자 반환 완료] Task ID: {} - 사용자 대기시간: {}초", taskId, String.format("%.1f", userWaitTime / 1000.0));
 
                 // 4) 전신 사진 업로드 및 스타일 분석은 후처리 (DB 트랜잭션과 분리)
                 String bodyImgUrl = null;
@@ -121,12 +127,16 @@ public class FittingService {
                     updateFittingTaskStyleAndBody(taskId, bodyImgUrl, styleAnalysis, styleEmbedding,
                         styleResult != null ? styleResult.getResultGender() : null);
                 }
+
+                long totalElapsed = System.currentTimeMillis() - startTime;
+                log.info("🏁 가상 피팅 전체 완료 - Task ID: {}, 총 소요시간: {}초", taskId, String.format("%.1f", totalElapsed / 1000.0));
             } else {
                 log.error("❌ 가상 피팅 실패 - 응답 상태: {}", response != null ? response.getStatus() : "null");
                 updateTaskStatus(taskId, FittingStatus.FAILED);
             }
         } catch (Exception e) {
-            log.error("❌ 가상 피팅 처리 중 오류: {}", e.getMessage(), e);
+            long errorElapsed = System.currentTimeMillis() - startTime;
+            log.error("❌ 가상 피팅 처리 중 오류 ({}초 경과): {}", String.format("%.1f", errorElapsed / 1000.0), e.getMessage(), e);
             updateTaskStatus(taskId, FittingStatus.FAILED);
         }
     }
@@ -199,8 +209,8 @@ public class FittingService {
      * @param bottomImageFilename 하의 사진 파일명
      * @param clothesAnalysisService 옷 분석 서비스 (순환 참조 방지를 위해 파라미터로 전달)
      */
+    /** 트랜잭션 없음: 내부에서 updateTaskStatus 등 짧은 트랜잭션만 사용. Gemini 대기 구간에서 커넥션 보유하지 않음. */
     @Async("taskExecutor")
-    @Transactional
     public void processVirtualFittingWithClothesAnalysis(
             Long taskId,
             byte[] userImageBytes,
@@ -212,80 +222,87 @@ public class FittingService {
             ClothesAnalysisService clothesAnalysisService,
             User user
     ) {
+        long processStartTime = System.currentTimeMillis();
         log.info("🚀 [비동기] 가상 피팅 전체 프로세스 시작 - Task ID: {}", taskId);
 
-        final User dbUser = user;
-
-
         try {
-            // 최소 하나는 있어야 함 (컨트롤러에서 검증하지만 이중 체크)
             if (topImageBytes == null && bottomImageBytes == null) {
                 log.error("❌ 상의와 하의가 모두 없습니다 - Task ID: {}", taskId);
                 updateTaskStatus(taskId, FittingStatus.FAILED);
                 return;
             }
 
-            // 1. 옷 분석 시작 (병렬 처리 - taskExecutor 사용, null 체크 포함)
-            List<CompletableFuture<Long>> analysisFutures = new ArrayList<>();
+            // === 1. 가상 피팅을 먼저 시작 (가장 오래 걸리는 작업) ===
+            final long pStart = processStartTime;
+            final CompletableFuture<Void> fittingFuture = CompletableFuture.runAsync(() -> {
+                processFitting(taskId, userImageBytes, userImageFilename, topImageBytes, bottomImageBytes, pStart);
+            }, taskExecutor);
 
-            // final 변수로 선언하여 람다에서 안전하게 참조 가능하도록 함
+            // === 2. 2초 후 옷 분석 시작 (Rate Limit 회피, 동시 2개씩만 Gemini 호출) ===
             final CompletableFuture<Long> topAnalysisFuture;
+            final CompletableFuture<Long> bottomAnalysisFuture;
+
+            // 상의 분석 (2초 후 시작)
             if (topImageBytes != null) {
                 topAnalysisFuture = CompletableFuture.supplyAsync(() -> {
                     try {
-                        log.info("💎 [비동기] 상의 분석 시작 - Task ID: {}", taskId);
+                        Thread.sleep(2000);
+                        log.info("💎 [지연 시작] 상의 분석 시작 - Task ID: {}", taskId);
                         return clothesAnalysisService.analyzeAndSaveClothes(topImageBytes, topImageFilename, "Top", user);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        return null;
                     } catch (Exception e) {
                         log.error("❌ 상의 분석 중 오류 발생 - Task ID: {}", taskId, e);
                         return null;
                     }
                 }, taskExecutor);
-                analysisFutures.add(topAnalysisFuture);
             } else {
                 topAnalysisFuture = CompletableFuture.completedFuture(null);
             }
 
-            final CompletableFuture<Long> bottomAnalysisFuture;
+            // 하의 분석 (2초 후 시작, 상의와 동시)
             if (bottomImageBytes != null) {
                 bottomAnalysisFuture = CompletableFuture.supplyAsync(() -> {
                     try {
-                        log.info("💎 [비동기] 하의 분석 시작 - Task ID: {}", taskId);
+                        Thread.sleep(2000);
+                        log.info("💎 [지연 시작] 하의 분석 시작 - Task ID: {}", taskId);
                         return clothesAnalysisService.analyzeAndSaveClothes(bottomImageBytes, bottomImageFilename, "Bottom", user);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        return null;
                     } catch (Exception e) {
                         log.error("❌ 하의 분석 중 오류 발생 - Task ID: {}", taskId, e);
                         return null;
                     }
                 }, taskExecutor);
-                analysisFutures.add(bottomAnalysisFuture);
             } else {
                 bottomAnalysisFuture = CompletableFuture.completedFuture(null);
             }
 
-            // 2. 옷 분석 완료 대기 및 가상 피팅 시작 (동일 taskExecutor에서 실행)
-            CompletableFuture.allOf(analysisFutures.toArray(new CompletableFuture[0])).thenRunAsync(() -> {
+            // === 3. 옷 분석 완료 시 → clothes ID를 FittingTask에 연결 ===
+            CompletableFuture.allOf(topAnalysisFuture, bottomAnalysisFuture).thenRunAsync(() -> {
                 try {
                     Long topId = topAnalysisFuture.join();
                     Long bottomId = bottomAnalysisFuture.join();
+                    long analysisElapsed = System.currentTimeMillis() - processStartTime;
+                    log.info("📊 옷 분석 완료 - Task ID: {}, topId: {}, bottomId: {}, 분석 소요: {}초",
+                            taskId, topId, bottomId, String.format("%.1f", analysisElapsed / 1000.0));
 
-                    // 최소 하나는 성공해야 함
                     if (topId != null || bottomId != null) {
-                        // FittingTask에 옷 ID 연결 (null일 수 있음)
                         updateFittingTaskClothes(taskId, topId, bottomId);
-                        log.info("✅ FittingTask에 옷 정보 연결 완료 - Task ID: {}, topId: {}, bottomId: {}",
-                                taskId, topId, bottomId);
-
-                        // 가상 피팅 처리 시작 (비동기)
-                        processFitting(taskId, userImageBytes, userImageFilename, topImageBytes, bottomImageBytes);
-                        log.info("🚀 가상 피팅 작업 시작 - Task ID: {}", taskId);
                     } else {
-                        log.error("❌ 옷 분석 실패로 인해 가상 피팅을 시작할 수 없습니다 - Task ID: {}, topId: {}, bottomId: {}",
-                                taskId, topId, bottomId);
-                        updateTaskStatus(taskId, FittingStatus.FAILED);
+                        log.warn("⚠️ 옷 분석 모두 실패 - Task ID: {}, clothes ID 연결 생략 (피팅 결과는 유지)", taskId);
                     }
                 } catch (Exception e) {
-                    log.error("❌ 가상 피팅 작업 시작 중 오류 발생 - Task ID: {}", taskId, e);
-                    updateTaskStatus(taskId, FittingStatus.FAILED);
+                    log.error("❌ 옷 분석 결과 연결 중 오류 - Task ID: {}", taskId, e);
                 }
+            }, taskExecutor);
+
+            // === 4. 모든 작업 완료 후 최종 로그 ===
+            CompletableFuture.allOf(topAnalysisFuture, bottomAnalysisFuture, fittingFuture).thenRunAsync(() -> {
+                long totalElapsed = System.currentTimeMillis() - processStartTime;
+                log.info("🏁 전체 프로세스 완료 - Task ID: {}, 총 소요시간: {}초", taskId, String.format("%.1f", totalElapsed / 1000.0));
             }, taskExecutor);
 
         } catch (Exception e) {

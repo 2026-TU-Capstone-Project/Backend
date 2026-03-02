@@ -4,11 +4,10 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-import com.example.Capstone_project.domain.ClothesSet;
 import org.hibernate.annotations.Array;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
-import java.time.LocalDateTime;
+
 
 @Entity
 @Getter @Setter
@@ -94,7 +93,6 @@ public class FittingTask {
     @Column(name = "result_gender", length = 10)
     private Gender resultGender;
 
-    // 👈 FittingTask.java 파일 맨 아래 } 바로 위에 넣으세요.
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "clothes_set_id")
     private ClothesSet clothesSet;

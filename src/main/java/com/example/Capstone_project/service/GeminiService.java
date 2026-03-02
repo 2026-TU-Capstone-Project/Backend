@@ -58,7 +58,7 @@ public class GeminiService {
 	@Value("${gemini.api.base-url:https://generativelanguage.googleapis.com/v1beta}")
 	private String geminiBaseUrl;
 
-	@Value("${gemini.api.model:gemini-3-pro-image-preview}")
+	@Value("${gemini.api.model:gemini-3.1-flash-image-preview}")
 	private String model;
 	
 	@Value("${gemini.api.analysis-model}")
@@ -150,7 +150,7 @@ public class GeminiService {
 		String contentType = mimeType != null ? mimeType : "image/jpeg";
 		String gcsUrl = gcsService.uploadBase64Image(imageBase64, contentType);
 		
-		log.info("✅ 이미지 GCS 업로드 완료 - URL: {}", gcsUrl);
+		log.info("Image uploaded to GCS - URL: {}", gcsUrl);
 		
 		// GCS 공개 URL 반환
 		return gcsUrl;
@@ -403,20 +403,19 @@ public class GeminiService {
 			throw new BadRequestException("Failed to generate image: " + e.getMessage());
 		}
 	}
+	private static final int MAX_RETRIES = 3;
+	private static final long RETRY_BASE_DELAY_MS = 3000;
+
 	public VirtualFittingResponse processVirtualFitting(byte[] userImageBytes, byte[] topImageBytes, byte[] bottomImageBytes, String positivePrompt, String negativePrompt, String resolution) {
 		try {
-			// 최소 하나는 필요 (컨트롤러에서 검증하지만 이중 체크)
 			if (topImageBytes == null && bottomImageBytes == null) {
 				throw new BadRequestException("At least one of top_image or bottom_image is required");
 			}
-			
-			// 1. 이미지 리사이징 (이미 구현된 메서드 활용)
+
 			byte[] resUser = resizeImageIfNeeded(userImageBytes);
 			byte[] resTop = topImageBytes != null ? resizeImageIfNeeded(topImageBytes) : null;
 			byte[] resBottom = bottomImageBytes != null ? resizeImageIfNeeded(bottomImageBytes) : null;
 
-			// 2. 형(동료)이 아래쪽에 짜놓은 진짜 요청 본문 생성기 호출! (중요)
-			// 형님 파일 아래쪽에 있는 'createGeminiRequestBody' 메서드를 그대로 씁니다.
 			Map<String, Object> requestBody = createGeminiRequestBody(
 					Base64.getEncoder().encodeToString(resUser),
 					resTop != null ? Base64.getEncoder().encodeToString(resTop) : null,
@@ -424,32 +423,14 @@ public class GeminiService {
 					positivePrompt, negativePrompt
 			);
 
-			log.info("🚀 비동기 AI 요청 시작...");
-
-// ✅ 436행: 주소 설정
 			String endpoint = "/models/" + model + ":generateContent";
 
-			log.info("📡 구글 AI에게 사진을 전달했습니다. 응답 대기 중... (최대 60초)");
+			String responseString = callGeminiWithRetry(endpoint, requestBody);
 
-			String responseString = geminiWebClient.post()
-					.uri(uriBuilder -> uriBuilder
-							.path(endpoint)
-							.queryParam("key", geminiApiKey)
-							.build())
-					.contentType(MediaType.APPLICATION_JSON)
-					.bodyValue(requestBody)
-					.retrieve()
-					.bodyToMono(String.class)
-					.timeout(java.time.Duration.ofSeconds(180))
-					.block();
+			log.info("Response received from Google AI. Parsing data...");
 
-			// ✅ 2. 이 로그가 찍히는지 보는 게 핵심입니다!
-			log.info("📥 구글로부터 응답을 받았습니다! 데이터 해석을 시작합니다.");
-
-			// ✅ 448행: 응답을 객체로 변환
 			GeminiGenerateContentResponse responseObj = objectMapper.readValue(responseString, GeminiGenerateContentResponse.class);
 
-			// ✅ 450행: 형(동료)의 진짜 이미지 추출 로직 이식 (여기서부터 중요!)
 			GeminiGenerateContentResponse.Candidate candidate = responseObj.getCandidates().get(0);
 			String imageBase64 = null;
 			String mimeType = null;
@@ -464,13 +445,11 @@ public class GeminiService {
 
 			if (imageBase64 == null) throw new BadRequestException("No image data in Gemini API response");
 
-			// ✅ 형(동료)이 115행에 만든 진짜 파일 저장 메서드 호출!
 			String imageUrl = saveBase64ImageToFile(imageBase64, mimeType);
 			String imageId = "gemini-" + System.currentTimeMillis();
 
-			log.info("💾 비동기 가상피팅 성공! 이미지 저장 경로: {}", imageUrl);
+			log.info("Async virtual fitting success! Image saved at: {}", imageUrl);
 
-			// ✅ 최종 결과 반환 (이 값이 FittingService를 통해 DB에 저장됩니다)
 			return VirtualFittingResponse.builder()
 					.imageId(imageId)
 					.status("completed")
@@ -478,9 +457,44 @@ public class GeminiService {
 					.build();
 
 		} catch (Exception e) {
-			log.error("💥 가상피팅 엔진 오류: {}", e.getMessage());
+			log.error("Virtual fitting engine error: {}", e.getMessage());
 			throw new RuntimeException("AI 처리 실패: " + e.getMessage());
 		}
+	}
+
+	/**
+	 * Gemini API 호출 + 429 Rate Limit 시 자동 재시도 (최대 MAX_RETRIES회, 지수 백오프).
+	 * 옷 분석과 가상 피팅이 동시에 실행되면서 429가 발생할 수 있어 재시도로 처리.
+	 */
+	private String callGeminiWithRetry(String endpoint, Map<String, Object> requestBody) {
+		for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+			try {
+				log.info("Gemini API 호출 시도 {}/{} - endpoint: {}", attempt, MAX_RETRIES, endpoint);
+
+				return geminiWebClient.post()
+						.uri(uriBuilder -> uriBuilder
+								.path(endpoint)
+								.queryParam("key", geminiApiKey)
+								.build())
+						.contentType(MediaType.APPLICATION_JSON)
+						.bodyValue(requestBody)
+						.retrieve()
+						.bodyToMono(String.class)
+						.timeout(java.time.Duration.ofSeconds(180))
+						.block();
+
+			} catch (Exception e) {
+				boolean isRateLimit = e.getMessage() != null && e.getMessage().contains("429");
+				if (isRateLimit && attempt < MAX_RETRIES) {
+					long delay = RETRY_BASE_DELAY_MS * attempt;
+					log.warn("⚠️ Gemini 429 Rate Limit - {}초 후 재시도 ({}/{})", delay / 1000, attempt + 1, MAX_RETRIES);
+					try { Thread.sleep(delay); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
+				} else {
+					throw e;
+				}
+			}
+		}
+		throw new RuntimeException("Gemini API 호출 실패: 최대 재시도 횟수 초과");
 	}
 
 	// =================================================================================
@@ -574,7 +588,7 @@ public class GeminiService {
 	 */
 	public String analyzeImageStyle(byte[] imageBytes, String prompt) {
 		try {
-			log.info("🎨 Gemini API로 이미지 스타일 분석 시작 - 모델: {}", analysisModel);
+			log.info("Gemini API style analysis started - model: {}", analysisModel);
 			
 			// 이미지를 Base64로 인코딩
 			String imageBase64 = Base64.getEncoder().encodeToString(imageBytes);
@@ -613,7 +627,7 @@ public class GeminiService {
 			// Gemini API 호출
 			// v1beta 대신 v1 사용 (더 안정적)
 			String endpoint = "/models/" + analysisModel + ":generateContent";
-			log.info("📡 Gemini API 호출 - 엔드포인트: {}, 모델: {}", endpoint, analysisModel);
+			log.info("Gemini API call - endpoint: {}, model: {}", endpoint, analysisModel);
 			
 			GeminiGenerateContentResponse response = geminiWebClient.post()
 				.uri(endpoint)
@@ -624,14 +638,14 @@ public class GeminiService {
 				.block();
 			
 			if (response == null || response.getCandidates() == null || response.getCandidates().isEmpty()) {
-				log.error("Gemini API 분석 응답이 null이거나 비어있음");
+				log.error("Gemini API analysis response is null or empty");
 				throw new BadRequestException("No response from Gemini API for style analysis");
 			}
 			
 			// 응답에서 텍스트 추출
 			GeminiGenerateContentResponse.Candidate candidate = response.getCandidates().get(0);
 			if (candidate.getContent() == null || candidate.getContent().getParts() == null) {
-				log.error("Gemini API 응답에 content 또는 parts가 없음");
+				log.error("Gemini API response has no content or parts");
 				throw new BadRequestException("Invalid response from Gemini API for style analysis");
 			}
 			
@@ -644,31 +658,31 @@ public class GeminiService {
 			}
 			
 			if (analysisText.length() == 0) {
-				log.warn("Gemini API 응답에 텍스트가 없음");
+				log.warn("Gemini API response has no text");
 				return "스타일 분석 결과를 받을 수 없습니다.";
 			}
 			
 			String result = analysisText.toString();
-			log.info("✅ Gemini API 스타일 분석 완료 - 결과 길이: {} 문자", result.length());
-			log.debug("분석 결과: {}", result.substring(0, Math.min(200, result.length())));
+			log.info("Gemini API style analysis done - result length: {} chars", result.length());
+			log.debug("Analysis result: {}", result.substring(0, Math.min(200, result.length())));
 			
 			return result;
 			
 		} catch (WebClientResponseException e) {
 			String responseBody = e.getResponseBodyAsString();
-			log.error("❌ Gemini API 스타일 분석 실패 - Status: {}, Response: {}, Model: {}", 
+			log.error("Gemini API style analysis failed - Status: {}, Response: {}, Model: {}", 
 				e.getStatusCode(), responseBody, analysisModel, e);
 			
 			// 404 오류인 경우 더 자세한 정보 로깅
 			if (e.getStatusCode().value() == 404) {
-				log.error("⚠️ 모델을 찾을 수 없습니다. 모델 이름 확인 필요: {}", analysisModel);
-				log.error("⚠️ API Base URL: {}", geminiBaseUrl);
-				log.error("⚠️ 전체 엔드포인트: {}/models/{}:generateContent", geminiBaseUrl, analysisModel);
+				log.error("Model not found. Check model name: {}", analysisModel);
+				log.error("API Base URL: {}", geminiBaseUrl);
+				log.error("Full endpoint: {}/models/{}:generateContent", geminiBaseUrl, analysisModel);
 			}
 			
 			throw new BadRequestException("Failed to analyze image style with Gemini API: " + e.getMessage());
 		} catch (Exception e) {
-			log.error("❌ Gemini API 스타일 분석 중 예외 발생", e);
+			log.error("Gemini API style analysis exception", e);
 			throw new BadRequestException("Error analyzing image style: " + e.getMessage());
 		}
 	}
@@ -687,7 +701,7 @@ public class GeminiService {
 			return objectMapper.readValue(cleanJson, ClothesAnalysisResultDto.class);
 
 		} catch (Exception e) {
-			log.error("❌ Gemini JSON 파싱 실패. 기본 객체를 반환합니다: {}", e.getMessage());
+			log.error("Gemini JSON parse failed. Returning default object: {}", e.getMessage());
 			// 파싱 실패 시 에러 방지를 위해 빈 객체라도 반환
 			ClothesAnalysisResultDto fallback = new ClothesAnalysisResultDto();
 			fallback.setCategory("Unknown");
@@ -737,7 +751,7 @@ public class GeminiService {
 				.resultGender(gender)
 				.build();
 		} catch (Exception e) {
-			log.warn("스타일+성별 JSON 파싱 실패, 스타일만 반환 - {}", e.getMessage());
+			log.warn("Style+gender JSON parse failed, returning style only - {}", e.getMessage());
 			return StyleAnalysisResult.builder()
 				.styleAnalysis(rawResponse)
 				.resultGender(null)
@@ -783,13 +797,13 @@ public class GeminiService {
 			for (int i = 0; i < valuesNode.size(); i++) {
 				result[i] = (float) valuesNode.get(i).asDouble();
 			}
-			log.info("✅ Gemini Embedding 완료 - 차원: {}", result.length);
+			log.info("Gemini Embedding done - dimensions: {}", result.length);
 			return result;
 		} catch (WebClientResponseException e) {
-			log.error("❌ Gemini Embedding API 실패 - {}", e.getResponseBodyAsString(), e);
+			log.error("Gemini Embedding API failed - {}", e.getResponseBodyAsString(), e);
 			throw new BadRequestException("Embedding API failed: " + e.getMessage());
 		} catch (Exception e) {
-			log.error("❌ Embedding 변환 중 오류", e);
+			log.error("Embedding conversion error", e);
 			throw new BadRequestException("Error creating embedding: " + e.getMessage());
 		}
 	}
