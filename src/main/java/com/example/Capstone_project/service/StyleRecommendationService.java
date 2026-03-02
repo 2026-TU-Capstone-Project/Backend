@@ -2,8 +2,12 @@ package com.example.Capstone_project.service;
 
 import com.example.Capstone_project.common.exception.BadRequestException;
 import com.example.Capstone_project.domain.Clothes;
+import com.example.Capstone_project.domain.Gender;
 import com.example.Capstone_project.domain.FittingTask;
+import com.example.Capstone_project.dto.ClothesRecommendationResponse;
+import com.example.Capstone_project.dto.ClothesResponseDto;
 import com.example.Capstone_project.dto.FittingTaskWithScore;
+import com.example.Capstone_project.repository.ClothesRepository;
 import com.example.Capstone_project.repository.FittingRepository;
 import com.example.Capstone_project.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -12,6 +16,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -27,9 +33,11 @@ import java.util.stream.IntStream;
 public class StyleRecommendationService {
 
     private static final int DEFAULT_LIMIT = 10;
+    private static final int MAX_LIMIT = 50;
 
     private final GeminiService geminiService;
     private final FittingRepository fittingRepository;
+    private final ClothesRepository clothesRepository;
     private final UserRepository userRepository;
 
     /**
@@ -42,6 +50,115 @@ public class StyleRecommendationService {
      */
     @Transactional(readOnly = true)
     public List<FittingTaskWithScore> recommendByStyle(String userQuery, Double minScore, Long userId) {
+        // 성별 필터: userId가 있으면 User에서 성별 조회
+        String genderFilter = null;
+        if (userId != null) {
+            genderFilter = userRepository.findById(userId)
+                    .map(u -> u.getGender() != null ? u.getGender().name() : null)
+                    .orElse(null);
+        }
+        return recommendInternal(userQuery, minScore, genderFilter, DEFAULT_LIMIT, null, false);
+    }
+
+    /**
+     * 검색어·성별·limit 지정 스타일 추천 (챗봇 Gemini function calling 및 외부 API 공용).
+     * userIdForMyCloset가 null이면 전체, 널이 아니면 해당 사용자 옷장만 검색.
+     *
+     * @param userQuery         예: "결혼식에 입고 갈 단정하고 깔끔한 스타일 추천해줘"
+     * @param minScore          최소 유사도 점수 (0~1, null이면 필터 없음)
+     * @param gender            성별 필터 (MALE/FEMALE, 대소문자 무관, null/blank면 필터 없음)
+     * @param limit             최대 개수 (기본 10, 최대 50)
+     * @param userIdForMyCloset  null이면 전체 피팅 검색, 널이 아니면 해당 사용자(user_id) 피팅만 검색 (내 옷장)
+     */
+    @Transactional(readOnly = true)
+    public List<FittingTaskWithScore> recommendByStyleWithFilters(String userQuery, Double minScore, String gender, Integer limit, Long userIdForMyCloset) {
+        String genderFilter = parseGenderOrNull(gender);
+        int resolvedLimit = resolveLimit(limit);
+        return recommendInternal(userQuery, minScore, genderFilter, resolvedLimit, userIdForMyCloset, false);
+    }
+
+    /**
+     * 피드 전용: 피드에 올라온 코디만 대상으로 스타일 유사도 추천.
+     */
+    @Transactional(readOnly = true)
+    public List<FittingTaskWithScore> recommendFromFeed(String userQuery, Double minScore, String gender, Integer limit) {
+        String genderFilter = parseGenderOrNull(gender);
+        int resolvedLimit = resolveLimit(limit);
+        return recommendInternal(userQuery, minScore, genderFilter, resolvedLimit, null, true);
+    }
+
+    /**
+     * 상의만 추천: 스타일 추천과 동일한 유사도 검색 후, 추천된 피팅 결과에서 상의만 추출해 유사도 순으로 반환. (챗봇·외부 API 공용)
+     */
+    @Transactional(readOnly = true)
+    public ClothesRecommendationResponse recommendTopsByStyle(String userQuery, Double minScore, String gender, Integer limit) {
+        int resolvedLimit = resolveLimit(limit);
+        List<FittingTaskWithScore> tasks = recommendInternal(userQuery, minScore, parseGenderOrNull(gender), MAX_LIMIT, null, false);
+        return extractClothesByCategory(tasks, true, resolvedLimit);
+    }
+
+    /**
+     * 하의만 추천: 스타일 추천과 동일한 유사도 검색 후, 추천된 피팅 결과에서 하의만 추출해 유사도 순으로 반환. (챗봇·외부 API 공용)
+     */
+    @Transactional(readOnly = true)
+    public ClothesRecommendationResponse recommendBottomsByStyle(String userQuery, Double minScore, String gender, Integer limit) {
+        int resolvedLimit = resolveLimit(limit);
+        List<FittingTaskWithScore> tasks = recommendInternal(userQuery, minScore, parseGenderOrNull(gender), MAX_LIMIT, null, false);
+        return extractClothesByCategory(tasks, false, resolvedLimit);
+    }
+
+    /**
+     * 내 옷장 전용 - 상의만 추천 (티셔츠, 셔츠 등). 해당 사용자 피팅 결과에서만 검색.
+     */
+    @Transactional(readOnly = true)
+    public ClothesRecommendationResponse recommendTopsByStyleFromMyCloset(String userQuery, Double minScore, String gender, Integer limit, Long userId) {
+        int resolvedLimit = resolveLimit(limit);
+        List<FittingTaskWithScore> tasks = recommendInternal(userQuery, minScore, parseGenderOrNull(gender), MAX_LIMIT, userId, false);
+        return extractClothesByCategory(tasks, true, resolvedLimit);
+    }
+
+    /**
+     * 내 옷장 전용 - 하의만 추천. 해당 사용자 피팅 결과에서만 검색.
+     */
+    @Transactional(readOnly = true)
+    public ClothesRecommendationResponse recommendBottomsByStyleFromMyCloset(String userQuery, Double minScore, String gender, Integer limit, Long userId) {
+        int resolvedLimit = resolveLimit(limit);
+        List<FittingTaskWithScore> tasks = recommendInternal(userQuery, minScore, parseGenderOrNull(gender), MAX_LIMIT, userId, false);
+        return extractClothesByCategory(tasks, false, resolvedLimit);
+    }
+
+    private ClothesRecommendationResponse extractClothesByCategory(List<FittingTaskWithScore> tasks, boolean isTop, int limit) {
+        Map<Long, Double> idToBestScore = new LinkedHashMap<>();
+        for (FittingTaskWithScore tws : tasks) {
+            Long clothesId = isTop ? tws.getTask().getTopId() : tws.getTask().getBottomId();
+            if (clothesId == null) continue;
+            idToBestScore.merge(clothesId, tws.getScore(), Math::max);
+        }
+        List<Long> orderedIds = idToBestScore.entrySet().stream()
+                .sorted(Comparator.<Map.Entry<Long, Double>>comparingDouble(Map.Entry::getValue).reversed())
+                .limit(limit)
+                .map(Map.Entry::getKey)
+                .toList();
+        if (orderedIds.isEmpty()) {
+            return ClothesRecommendationResponse.builder().items(List.of()).build();
+        }
+        Map<Long, Clothes> clothesMap = clothesRepository.findAllById(orderedIds).stream().collect(Collectors.toMap(Clothes::getId, c -> c));
+        List<ClothesRecommendationResponse.ClothesRecommendationItem> items = orderedIds.stream()
+                .map(id -> {
+                    Clothes c = clothesMap.get(id);
+                    if (c == null) return null;
+                    Double score = idToBestScore.get(id);
+                    return ClothesRecommendationResponse.ClothesRecommendationItem.builder()
+                            .clothes(ClothesResponseDto.from(c))
+                            .score(score != null ? Math.round(score * 100.0) / 100.0 : null)
+                            .build();
+                })
+                .filter(item -> item != null)
+                .toList();
+        return ClothesRecommendationResponse.builder().items(items).build();
+    }
+
+    private List<FittingTaskWithScore> recommendInternal(String userQuery, Double minScore, String genderFilter, int limit, Long userIdForMyCloset, boolean fromFeedOnly) {
         if (userQuery == null || userQuery.trim().isEmpty()) {
             throw new BadRequestException("검색어를 입력해주세요.");
         }
@@ -49,18 +166,11 @@ public class StyleRecommendationService {
             throw new BadRequestException("minScore는 0~1 사이여야 합니다.");
         }
 
-        // 성별 필터: userId가 있으면 User에서 성별 조회
-        String genderFilter = null;
-        if (userId != null) {
-            genderFilter = userRepository.findById(userId)
-                .map(u -> u.getGender() != null ? u.getGender().name() : null)
-                .orElse(null);
-        }
-
-        log.info("🔍 스타일 추천 검색 - 쿼리: {}, minScore: {}, genderFilter: {}", userQuery, minScore, genderFilter);
+        String normalizedQuery = userQuery.trim();
+        log.info("🔍 스타일 추천 검색 - 쿼리: {}, minScore: {}, genderFilter: {}, limit: {}, myCloset: {}, feedOnly: {}", normalizedQuery, minScore, genderFilter, limit, userIdForMyCloset, fromFeedOnly);
 
         // 1. 사용자 검색어를 RETRIEVAL_QUERY로 임베딩
-        float[] queryEmbedding = geminiService.embedText(userQuery.trim(), "RETRIEVAL_QUERY");
+        float[] queryEmbedding = geminiService.embedText(normalizedQuery, "RETRIEVAL_QUERY");
 
         // 2. pgvector 포맷 문자열로 변환 "[0.1,0.2,...]"
         String queryVectorStr = toPgVectorString(queryEmbedding);
@@ -68,10 +178,15 @@ public class StyleRecommendationService {
         // 3. maxDistance = 1 - minScore (코사인 거리. 낮을수록 유사, score=1-distance)
         Double maxDistance = minScore != null ? (1.0 - minScore) : null;
 
-        // 4. 유사도 검색 (거리 + 성별 필터, 최대 10개)
-        List<Object[]> idWithDistance = fittingRepository.findSimilarIdsWithDistance(
-            queryVectorStr, maxDistance, genderFilter, DEFAULT_LIMIT
-        );
+        // 4. 유사도 검색 (내 옷장 / 피드 / 전체)
+        List<Object[]> idWithDistance;
+        if (fromFeedOnly) {
+            idWithDistance = fittingRepository.findSimilarIdsWithDistanceFromFeed(queryVectorStr, maxDistance, genderFilter, limit);
+        } else if (userIdForMyCloset != null) {
+            idWithDistance = fittingRepository.findSimilarIdsWithDistanceByUser(queryVectorStr, maxDistance, genderFilter, userIdForMyCloset, limit);
+        } else {
+            idWithDistance = fittingRepository.findSimilarIdsWithDistance(queryVectorStr, maxDistance, genderFilter, limit);
+        }
 
         if (idWithDistance.isEmpty()) {
             log.info("✅ 스타일 추천 완료 - 조건에 맞는 결과 없음");
@@ -80,6 +195,10 @@ public class StyleRecommendationService {
 
         // 5. id 목록으로 엔티티 조회 (순서 유지)
         List<Long> ids = idWithDistance.stream()
+                .map(row -> ((Number) row[0]).longValue())
+                .toList();
+        Map<Long, FittingTask> taskMap = fittingRepository.findAllById(ids).stream()
+                .collect(Collectors.toMap(FittingTask::getId, t -> t));
             .map(row -> ((Number) row[0]).longValue())
             .toList();
         Map<Long, FittingTask> taskMap = fittingRepository.findAllByIdInWithClothes(ids).stream()
@@ -97,9 +216,33 @@ public class StyleRecommendationService {
             }
         }
 
-        log.info("✅ 스타일 추천 완료 - {}건 반환 (minScore={}, genderFilter={})", results.size(), minScore, genderFilter);
+        log.info("✅ 스타일 추천 완료 - {}건 반환 (minScore={}, genderFilter={}, limit={}, myCloset={}, feedOnly={})", results.size(), minScore, genderFilter, limit, userIdForMyCloset, fromFeedOnly);
         return results;
     }
+
+    private String parseGenderOrNull(String gender) {
+        if (gender == null || gender.isBlank()) {
+            return null;
+        }
+        String normalized = gender.trim().toUpperCase();
+        try {
+            return Gender.valueOf(normalized).name();
+        } catch (IllegalArgumentException e) {
+            throw new BadRequestException("gender는 MALE 또는 FEMALE 이어야 합니다.");
+        }
+    }
+
+    private int resolveLimit(Integer limit) {
+        if (limit == null) {
+            return DEFAULT_LIMIT;
+        }
+        if (limit <= 0) {
+            throw new BadRequestException("limit은 1 이상이어야 합니다.");
+        }
+        if (limit > MAX_LIMIT) {
+            return MAX_LIMIT;
+        }
+        return limit;
 
     @Transactional(readOnly = true)
     public List<FittingTaskWithScore> recommendByWeatherStyle(String userQuery, Double minScore, Long userId, double temperature) {
