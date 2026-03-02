@@ -1,14 +1,22 @@
 package com.example.Capstone_project.controller;
 
 import com.example.Capstone_project.common.dto.ApiResponse;
+import com.example.Capstone_project.common.exception.BadRequestException;
+import com.example.Capstone_project.common.exception.ResourceNotFoundException;
 import com.example.Capstone_project.domain.Clothes;
+import com.example.Capstone_project.domain.ClothesUploadStatus;
+import com.example.Capstone_project.domain.ClothesUploadTask;
 import com.example.Capstone_project.domain.User;
-import com.example.Capstone_project.dto.ClothesRequestDto;
 import com.example.Capstone_project.dto.ClothesResponseDto;
+import com.example.Capstone_project.dto.ClothesUploadStatusResponse;
+import com.example.Capstone_project.dto.ClothesUploadTaskIdResponse;
 import com.example.Capstone_project.repository.ClothesRepository;
+import com.example.Capstone_project.repository.ClothesUploadTaskRepository;
 import com.example.Capstone_project.service.ClothesAnalysisService;
+import com.example.Capstone_project.service.ClothesUploadSseService;
 import com.example.Capstone_project.service.GoogleCloudStorageService;
 import com.example.Capstone_project.service.RedisLockService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.example.Capstone_project.config.CustomUserDetails;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -21,6 +29,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
 import java.util.List;
@@ -34,16 +43,20 @@ import java.time.Duration;
 public class ClothesController {
 
     private final ClothesRepository clothesRepository;
+    private final ClothesUploadTaskRepository clothesUploadTaskRepository;
     private final ClothesAnalysisService clothesAnalysisService;
+    private final ClothesUploadSseService clothesUploadSseService;
     private final GoogleCloudStorageService gcsService;
     private final RedisLockService redisLockService;
+    private final ObjectMapper objectMapper;
 
     @Operation(
         summary = "옷 등록",
-        description = "옷 사진 1장을 업로드하여 AI 분석 후 저장합니다. **비동기 처리** → 즉시 202 Accepted 반환, 백그라운드에서 분석·저장됩니다."
+        description = "옷 사진 1장을 업로드하여 AI 분석 후 저장합니다. **비동기 + SSE** → 202 Accepted와 taskId 반환. " +
+                "GET /api/v1/clothes/upload/{taskId}/stream 으로 진행 상황(이벤트 name=status)을 실시간 수신하세요."
     )
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<ApiResponse<String>> uploadClothes(
+    public ResponseEntity<ApiResponse<ClothesUploadTaskIdResponse>> uploadClothes(
             @Parameter(description = "옷 이미지 파일", required = true) @RequestParam("file") MultipartFile file,
             @Parameter(description = "카테고리 (Top / Bottom / Shoes)", example = "Top", required = true) @RequestParam("category") String category,
             @AuthenticationPrincipal CustomUserDetails userDetails
@@ -59,7 +72,6 @@ public class ClothesController {
         final Long userId = userDetails.getUser().getId();
         final String lockKey = "lock:clothes-upload:" + userId;
 
-// 1) 락 시도
         if (!redisLockService.tryLock(lockKey, Duration.ofSeconds(8))) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(ApiResponse.error("이미 옷 등록이 처리 중입니다. 잠시 후 다시 시도해주세요."));
@@ -68,17 +80,66 @@ public class ClothesController {
         try {
             byte[] imageBytes = file.getBytes();
             String filename = file.getOriginalFilename();
-            clothesAnalysisService.analyzeAndSaveClothesAsync(imageBytes, filename, category, userDetails.getUser());
+
+            ClothesUploadTask task = ClothesUploadTask.builder()
+                    .userId(userId)
+                    .category(category)
+                    .status(ClothesUploadStatus.WAITING)
+                    .build();
+            task = clothesUploadTaskRepository.save(task);
+            Long taskId = task.getId();
+
+            clothesAnalysisService.startClothesUploadAndNotify(taskId, imageBytes, filename, category, userDetails.getUser());
+
+            ClothesUploadTaskIdResponse body = new ClothesUploadTaskIdResponse(taskId);
+            return ResponseEntity.status(HttpStatus.ACCEPTED)
+                    .body(ApiResponse.success(
+                            "옷 등록이 시작되었습니다. GET /api/v1/clothes/upload/" + taskId + "/stream 으로 진행 상황을 확인하세요.",
+                            body));
         } catch (IOException e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(ApiResponse.error("파일 읽기 실패: " + e.getMessage()));
         }
+    }
 
-        // -> “연타 방지” 목적이면 TTL로 자연 해제시키는 게 안전합니다.
+    @Operation(
+        summary = "옷 업로드 진행 상황 스트림 (SSE)",
+        description = "taskId에 대한 상태 변경을 실시간으로 수신합니다. 이벤트 name=status (가상 피팅과 동일). " +
+                "이미 COMPLETED/FAILED면 현재 상태 1회 전송 후 종료."
+    )
+    @GetMapping(value = "/upload/{taskId}/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter streamClothesUploadStatus(
+            @Parameter(description = "업로드 작업 ID", required = true) @PathVariable Long taskId,
+            @AuthenticationPrincipal CustomUserDetails userDetails
+    ) {
+        Long userId = userDetails.getUser().getId();
+        ClothesUploadTask task = clothesUploadTaskRepository.findById(taskId)
+                .orElseThrow(() -> new ResourceNotFoundException("Clothes upload task not found: " + taskId));
+        if (!userId.equals(task.getUserId())) {
+            throw new BadRequestException("해당 작업에 대한 권한이 없습니다.");
+        }
 
-        return ResponseEntity.status(HttpStatus.ACCEPTED)
-                .body(ApiResponse.success("Clothes registration started. Processing in background.",
-                        "옷 등록이 시작되었습니다. 백그라운드에서 분석 및 저장이 진행됩니다."));
+        ClothesUploadStatusResponse current = ClothesUploadStatusResponse.builder()
+                .taskId(task.getId())
+                .status(task.getStatus())
+                .clothesId(task.getClothesId())
+                .errorMessage(task.getErrorMessage())
+                .build();
+
+        if (task.getStatus() == ClothesUploadStatus.COMPLETED || task.getStatus() == ClothesUploadStatus.FAILED) {
+            SseEmitter emitter = new SseEmitter(60_000L);
+            clothesUploadSseService.sendOnceAndComplete(emitter, current);
+            return emitter;
+        }
+
+        SseEmitter registered = clothesUploadSseService.register(taskId);
+        try {
+            registered.send(SseEmitter.event().name("status").data(objectMapper.writeValueAsString(current)));
+        } catch (IOException e) {
+            log.warn("SSE initial send failed for clothes upload taskId={}", taskId, e);
+            clothesUploadSseService.sendOnceAndComplete(registered, current);
+        }
+        return registered;
     }
 
     // @Operation(
