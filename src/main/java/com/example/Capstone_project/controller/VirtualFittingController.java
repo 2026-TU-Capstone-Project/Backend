@@ -11,22 +11,14 @@ import com.example.Capstone_project.dto.VirtualFittingTaskIdResponse;
 import com.example.Capstone_project.service.ClothesAnalysisService;
 import com.example.Capstone_project.service.FittingService;
 import com.example.Capstone_project.service.RedisLockService;
-import com.example.Capstone_project.service.GoogleCloudStorageService;
 import com.example.Capstone_project.service.StyleRecommendationService;
 import com.example.Capstone_project.service.VirtualFittingSseService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.media.Content;
-import io.swagger.v3.oas.annotations.media.Schema;
-import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.FileSystemResource;
-import org.springframework.core.io.Resource;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -37,11 +29,7 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
-import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -56,16 +44,12 @@ public class VirtualFittingController {
 
     private final FittingService fittingService;
     private final ClothesAnalysisService clothesAnalysisService;
-    private final GoogleCloudStorageService gcsService;
     private final Executor taskExecutor;
     private final StyleRecommendationService styleRecommendationService;
     private final RedisLockService RedisLockService;
     private final VirtualFittingSseService virtualFittingSseService;
     private final ObjectProvider<StringRedisTemplate> stringRedisTemplateProvider;
     private final ObjectMapper objectMapper;
-
-    @Value("${virtual-fitting.image.storage-path:./images/virtual-fitting}")
-    private String imageStoragePath;
 
     @Operation(
             summary = "가상 피팅 요청",
@@ -325,27 +309,29 @@ public class VirtualFittingController {
         final String cacheKey = "cache:weather-style:" + userId + ":" + query + ":" + tempKey;
 
         try {
-            //Redis 먼저 조회
-            String cached = stringRedisTemplate.opsForValue().get(cacheKey);
-            if (cached != null) {
-                StyleRecommendationResponse cachedBody =
-                        objectMapper.readValue(cached, StyleRecommendationResponse.class);
+            StringRedisTemplate redis = stringRedisTemplateProvider.getIfAvailable();
 
-                return ResponseEntity.ok(
-                        ApiResponse.success("날씨 기반 스타일 추천 결과 (cached)", cachedBody)
-                );
+            if (redis != null) {
+                String cached = redis.opsForValue().get(cacheKey);
+                if (cached != null) {
+                    StyleRecommendationResponse cachedBody =
+                            objectMapper.readValue(cached, StyleRecommendationResponse.class);
+                    return ResponseEntity.ok(
+                            ApiResponse.success("날씨 기반 스타일 추천 결과 (cached)", cachedBody)
+                    );
+                }
             }
 
-            //실제 추천 실행
             var recommendations = styleRecommendationService
                     .recommendByWeatherStyle(query, 0.7, userId, temp);
 
             StyleRecommendationResponse body =
                     StyleRecommendationResponse.from(recommendations);
 
-            //Redis 60초 캐시
-            String json = objectMapper.writeValueAsString(body);
-            stringRedisTemplate.opsForValue().set(cacheKey, json, java.time.Duration.ofSeconds(60));
+            if (redis != null) {
+                String json = objectMapper.writeValueAsString(body);
+                redis.opsForValue().set(cacheKey, json, java.time.Duration.ofSeconds(60));
+            }
 
             return ResponseEntity.ok(
                     ApiResponse.success("날씨 기반 스타일 추천 결과", body)
