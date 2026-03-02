@@ -215,31 +215,7 @@ public class StyleRecommendationService {
         log.info("✅ 스타일 추천 완료 - {}건 반환 (minScore={}, genderFilter={}, limit={}, myCloset={}, feedOnly={})", results.size(), minScore, genderFilter, limit, userIdForMyCloset, fromFeedOnly);
         return results;
     }
-
-    private String parseGenderOrNull(String gender) {
-        if (gender == null || gender.isBlank()) {
-            return null;
-        }
-        String normalized = gender.trim().toUpperCase();
-        try {
-            return Gender.valueOf(normalized).name();
-        } catch (IllegalArgumentException e) {
-            throw new BadRequestException("gender는 MALE 또는 FEMALE 이어야 합니다.");
-        }
-    }
-
-    private int resolveLimit(Integer limit) {
-        if (limit == null) {
-            return DEFAULT_LIMIT;
-        }
-        if (limit <= 0) {
-            throw new BadRequestException("limit은 1 이상이어야 합니다.");
-        }
-        if (limit > MAX_LIMIT) {
-            return MAX_LIMIT;
-        }
-        return limit;
-
+        
     @Transactional(readOnly = true)
     public List<FittingTaskWithScore> recommendByWeatherStyle(String userQuery, Double minScore, Long userId, double temperature) {
         List<FittingTaskWithScore> baseResults = recommendByStyle(userQuery, minScore, userId);
