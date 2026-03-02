@@ -328,6 +328,31 @@ public class StyleRecommendationService {
         return Math.max(0.0, Math.min(1.0, v));
     }
 
+    private String parseGenderOrNull(String gender) {
+        if (gender == null || gender.isBlank()) {
+            return null;
+        }
+        String normalized = gender.trim().toUpperCase();
+        try {
+            return Gender.valueOf(normalized).name();
+        } catch (IllegalArgumentException e) {
+            throw new BadRequestException("gender는 MALE 또는 FEMALE 이어야 합니다.");
+        }
+    }
+
+    private int resolveLimit(Integer limit) {
+        if (limit == null) {
+            return DEFAULT_LIMIT;
+        }
+        if (limit <= 0) {
+            throw new BadRequestException("limit은 1 이상이어야 합니다.");
+        }
+        if (limit > MAX_LIMIT) {
+            return MAX_LIMIT;
+        }
+        return limit;
+    }
+
     private String toPgVectorString(float[] embedding) {
         if (embedding == null || embedding.length == 0) {
             throw new BadRequestException("Invalid embedding");

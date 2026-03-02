@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+	<include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+	<!-- JSON 로깅 (ELK/모니터링 수집 대비) - Docker/운영에서 stdout 수집 시 그대로 사용 -->
+	<appender name="CONSOLE_JSON" class="ch.qos.logback.core.ConsoleAppender">
+		<encoder class="net.logstash.logback.encoder.LogstashEncoder">
+			<includeMdcKeyName>traceId</includeMdcKeyName>
+			<includeMdcKeyName>spanId</includeMdcKeyName>
+			<customFields>{"application":"${spring.application.name:-capstone}"}</customFields>
+			<fieldNames>
+				<timestamp>@timestamp</timestamp>
+				<version>[ignore]</version>
+			</fieldNames>
+		</encoder>
+	</appender>
+
+	<!-- 로컬/개발 시 가독성용 일반 콘솔 (프로필: default 또는 local) -->
+	<appender name="CONSOLE_PLAIN" class="ch.qos.logback.core.ConsoleAppender">
+		<encoder>
+			<pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+			<charset>UTF-8</charset>
+		</encoder>
+	</appender>
+
+	<!-- 프로필별 선택: docker/prod → JSON, 그 외 → 일반 텍스트 -->
+	<springProfile name="docker | prod">
+		<root level="INFO">
+			<appender-ref ref="CONSOLE_JSON"/>
+		</root>
+	</springProfile>
+	<springProfile name="!docker &amp; !prod">
+		<root level="INFO">
+			<appender-ref ref="CONSOLE_PLAIN"/>
+		</root>
+	</springProfile>
+</configuration>

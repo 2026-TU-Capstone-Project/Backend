@@ -16,6 +16,10 @@ RUN gradle clean build -x test --no-daemon
 FROM eclipse-temurin:21-jdk
 WORKDIR /app
 
+# curl for actuator healthcheck
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+	&& rm -rf /var/lib/apt/lists/*
+
 # Copy the built JAR from build stage
 COPY --from=build /app/build/libs/*.jar app.jar
 
