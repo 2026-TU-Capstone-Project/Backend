@@ -20,6 +20,9 @@ public interface FittingRepository extends JpaRepository<FittingTask, Long> {
     @Query("SELECT DISTINCT ft FROM FittingTask ft LEFT JOIN FETCH ft.top LEFT JOIN FETCH ft.bottom WHERE ft.userId = :userId AND ft.isSaved = true")
     List<FittingTask> findByUserIdAndIsSavedTrueWithClothes(@Param("userId") Long userId);
 
+    @Query("SELECT DISTINCT ft FROM FittingTask ft LEFT JOIN FETCH ft.top LEFT JOIN FETCH ft.bottom WHERE ft.id IN :ids")
+    List<FittingTask> findAllByIdInWithClothes(@Param("ids") List<Long> ids);
+
     /**
      * pgvector 유사도 검색 + 거리(distance) 반환, maxDistance 이하만 반환
      * distance: 0=동일, 낮을수록 유사. 유사도 score = 1 - distance
