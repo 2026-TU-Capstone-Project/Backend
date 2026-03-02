@@ -23,15 +23,15 @@ public class FittingCleanupService {
     @Async("taskExecutor")
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void cleanupAfterTaskDelete(String bodyImgUrl, String resultImgUrl, Long topId, Long bottomId) {
-        log.info("🧹 [비동기] FittingTask 연관 리소스 정리 시작");
+        log.info("[Async] FittingTask resource cleanup started");
         try {
             deleteGcsImageIfPresent(bodyImgUrl, "bodyImg");
             deleteGcsImageIfPresent(resultImgUrl, "resultImg");
             deleteClothesIfVirtualFittingOnly(topId);
             deleteClothesIfVirtualFittingOnly(bottomId);
-            log.info("🧹 [비동기] FittingTask 연관 리소스 정리 완료");
+            log.info("[Async] FittingTask resource cleanup completed");
         } catch (Exception e) {
-            log.error("❌ [비동기] FittingTask 연관 리소스 정리 중 오류", e);
+            log.error("[Async] FittingTask resource cleanup error", e);
         }
     }
 
@@ -40,7 +40,7 @@ public class FittingCleanupService {
         try {
             String blobName = gcsService.extractBlobNameFromUrl(url);
             gcsService.deleteImage(blobName);
-            log.info("🗑️ GCS {} 이미지 삭제 완료: {}", label, blobName);
+            log.info("GCS {} image deleted: {}", label, blobName);
         } catch (Exception e) {
             log.warn("GCS {} 이미지 삭제 스킵: {}", label, e.getMessage());
         }
