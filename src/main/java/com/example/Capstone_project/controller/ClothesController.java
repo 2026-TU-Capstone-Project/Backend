@@ -12,6 +12,7 @@ import com.example.Capstone_project.dto.ClothesUploadStatusResponse;
 import com.example.Capstone_project.dto.ClothesUploadTaskIdResponse;
 import com.example.Capstone_project.repository.ClothesRepository;
 import com.example.Capstone_project.repository.ClothesUploadTaskRepository;
+import com.example.Capstone_project.repository.FittingRepository;
 import com.example.Capstone_project.service.ClothesAnalysisService;
 import com.example.Capstone_project.service.ClothesUploadSseService;
 import com.example.Capstone_project.service.GoogleCloudStorageService;
@@ -24,6 +25,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -44,6 +46,7 @@ public class ClothesController {
 
     private final ClothesRepository clothesRepository;
     private final ClothesUploadTaskRepository clothesUploadTaskRepository;
+    private final FittingRepository fittingRepository;
     private final ClothesAnalysisService clothesAnalysisService;
     private final ClothesUploadSseService clothesUploadSseService;
     private final GoogleCloudStorageService gcsService;
@@ -222,6 +225,7 @@ public class ClothesController {
 
     @Operation(summary = "옷 삭제", description = "본인 소유 옷만 삭제 가능합니다.")
     @DeleteMapping("/{id}")
+    @Transactional
     public ResponseEntity<ApiResponse<String>> deleteClothes(
             @Parameter(description = "옷(Clothes) ID") @PathVariable Long id,
             @AuthenticationPrincipal CustomUserDetails userDetails
@@ -232,6 +236,9 @@ public class ClothesController {
         if (!clothes.getUser().getId().equals(userDetails.getUser().getId())) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(ApiResponse.error("삭제 권한이 없습니다."));
         }
+
+        fittingRepository.clearTopIdByClothesId(id);
+        fittingRepository.clearBottomIdByClothesId(id);
 
         String blobName = gcsService.extractBlobNameFromUrl(clothes.getImgUrl());
         gcsService.deleteImage(blobName);
