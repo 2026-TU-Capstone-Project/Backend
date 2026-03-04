@@ -38,6 +38,8 @@ public class SecurityConfig {
 				.authorizeHttpRequests(auth -> auth
 						// Actuator 헬스체크 (Docker/로드밸런서용)
 						.requestMatchers("/actuator/health", "/actuator/info").permitAll()
+						// SSE 스트림 (Async Dispatch 시 SecurityContext 미전파 방지)
+						.requestMatchers("/api/v1/virtual-fitting/*/stream").permitAll()
 						// Swagger 및 API 문서
 						.requestMatchers("/v3/api-docs/**", "/v3/api-docs").permitAll()
 						.requestMatchers("/swagger-ui/**", "/swagger-ui.html").permitAll()

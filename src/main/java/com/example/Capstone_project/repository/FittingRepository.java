@@ -6,6 +6,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import org.springframework.data.jpa.repository.Modifying;
+
 import java.util.List;
 import java.util.Optional;
 
@@ -13,6 +15,14 @@ import java.util.Optional;
 public interface FittingRepository extends JpaRepository<FittingTask, Long> {
 
     List<FittingTask> findByUserIdAndIsSavedTrue(Long userId);
+
+    @Modifying
+    @Query("UPDATE FittingTask ft SET ft.topId = null WHERE ft.topId = :clothesId")
+    void clearTopIdByClothesId(@Param("clothesId") Long clothesId);
+
+    @Modifying
+    @Query("UPDATE FittingTask ft SET ft.bottomId = null WHERE ft.bottomId = :clothesId")
+    void clearBottomIdByClothesId(@Param("clothesId") Long clothesId);
 
     @Query("SELECT ft FROM FittingTask ft LEFT JOIN FETCH ft.top LEFT JOIN FETCH ft.bottom WHERE ft.id = :id")
     Optional<FittingTask> findByIdWithClothes(@Param("id") Long id);
