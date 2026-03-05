@@ -18,6 +18,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final UserDetailsService userDetailsService;
 
     @Override
+    protected boolean shouldNotFilterAsyncDispatch() {
+        return true;
+    }
+
+    @Override
+    protected boolean shouldNotFilterErrorDispatch() {
+        return true;
+    }
+
+    @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
         String token = request.getHeader("Authorization");
@@ -29,7 +39,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
                 SecurityContextHolder.getContext().setAuthentication(auth);
             } catch (Exception e) {
-                /* 유효하지 않은 토큰 또는 유저 없음 - 원인 확인용 로그 */
                 org.slf4j.LoggerFactory.getLogger(JwtAuthenticationFilter.class)
                         .warn("JWT auth failed: {} - {}", e.getClass().getSimpleName(), e.getMessage());
             }
