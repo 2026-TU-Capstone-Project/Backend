@@ -30,9 +30,15 @@ public class ClothesAnalysisService {
     private final ClothesUploadSseService clothesUploadSseService;
 
     /**
-     * 옷 분석 및 저장. **트랜잭션 분리**: GCS 업로드 + Gemini 호출은 트랜잭션 밖(커넥션 미사용),
+     * 옷 분석 및 저장. 트랜잭션 분리: GCS 업로드 + Gemini 호출은 트랜잭션 밖,
      * DB 저장만 짧은 트랜잭션으로 수행해 커넥션 풀 고갈을 방지.
-     * @param inCloset true=내 옷장에 표시(직접 등록), false=가상피팅 입력용(옷장에 미표시)
+     *
+     * [수정 이유]
+     * 기존: "한국어 JSON 형식으로만 답변해줘" → 허용값 미지정
+     * → Gemini가 season을 "여름", "Summer", "여름/봄" 등 매번 다르게 응답
+     * → 날씨 보너스 비교(norm()의 한국어 매핑)가 불안정하게 동작해서 보너스가 항상 0
+     *
+     * 수정: 한국어 유지 + 허용값 목록 명시 → DB에 "봄/여름/얇음/반팔" 등 일관된 값 저장
      */
     private Long analyzeAndSaveClothesInternal(byte[] imageBytes, String filename, String category, User user, boolean inCloset) throws IOException {
 
@@ -49,18 +55,47 @@ public class ClothesAnalysisService {
             imgUrl = gcsService.uploadImage(imageBytes, uniqueFilename, "image/jpeg");
         }
 
-        // [Step 2] Gemini 호출 (트랜잭션 없음 - 오래 걸리는 외부 API, 커넥션 보유하지 않음)
-        String prompt = "이 옷 사진을 분석해서 category, color, material, pattern, neckLine, sleeveType, closure, style, fit, length, texture, detail, season, thickness, occasion 정보를 " +
-                "한국어 JSON 형식으로만 답변해줘. 예: {\"category\": \"상의\", \"color\": \"검정\", ...}";
+        // [Step 2] Gemini 호출 (트랜잭션 없음 - 오래 걸리는 외부 API)
+        // ★ 수정: 허용값 명시로 DB 저장값 일관성 보장
+        String prompt = """
+                이 옷 사진을 분석해서 아래 JSON 형식으로만 답변해줘. 다른 텍스트 없이 JSON만 출력해.
+                
+                각 필드는 반드시 아래 허용값 중 하나로만 답해줘:
+                - season: 봄, 여름, 가을, 겨울, 사계절 중 하나
+                - thickness: 얇음, 보통, 두꺼움 중 하나
+                - sleeveType: 반팔, 긴팔, 민소매, 없음 중 하나 (하의나 해당 없으면 없음)
+                - category: 상의, 하의, 신발, 아우터, 액세서리 중 하나
+                - 나머지 필드: 한국어로 간결하게
+                
+                {
+                  "category": "",
+                  "color": "",
+                  "material": "",
+                  "pattern": "",
+                  "neckLine": "",
+                  "sleeveType": "",
+                  "closure": "",
+                  "style": "",
+                  "fit": "",
+                  "length": "",
+                  "texture": "",
+                  "detail": "",
+                  "season": "",
+                  "thickness": "",
+                  "occasion": ""
+                }
+                """;
+
         ClothesAnalysisResultDto result = geminiService.analyzeClothesImage(imageBytes, prompt);
 
-        // [Step 3] DB 저장만 짧은 트랜잭션으로 수행 (커넥션 짧게 사용 후 반납)
+        // 날씨 필드 확인 로그
+        log.info("🧥 옷 분석 완료 - season: {}, thickness: {}, sleeveType: {}",
+                result.getSeason(), result.getThickness(), result.getSleeveType());
+
+        // [Step 3] DB 저장만 짧은 트랜잭션
         return saveClothesToDb(imgUrl, result, category, user, inCloset);
     }
 
-    /**
-     * 분석 결과를 DB에만 저장. 짧은 트랜잭션만 사용하여 커넥션 풀 고갈을 방지.
-     */
     @Transactional(rollbackFor = Exception.class)
     public Long saveClothesToDb(String imgUrl, ClothesAnalysisResultDto result, String category, User user, boolean inCloset) {
         String autoName = result.getColor() + " " + result.getMaterial() + " " + result.getCategory();
@@ -93,13 +128,6 @@ public class ClothesAnalysisService {
         return saved.getId();
     }
 
-    // --- 아래의 비동기/동기 래퍼 메서드들은 기존 구조를 그대로 유지하여 에러를 방지합니다 ---
-
-    /**
-     * 비동기 옷 분석. MultipartFile 대신 byte[]를 받아야 함.
-     * (MultipartFile은 요청 종료 시 임시파일이 삭제되므로 @Async에서 getBytes() 호출 시 NoSuchFileException 발생)
-     */
-    /** 내 옷장 직접 등록용 - inCloset=true (SSE 없이 기존 동작, 하위 호환). 트랜잭션은 내부 saveClothesToDb에서만 짧게 사용. */
     @Async("taskExecutor")
     public void analyzeAndSaveClothesAsync(byte[] imageBytes, String filename, String category, User user) {
         try {
@@ -109,23 +137,16 @@ public class ClothesAnalysisService {
         }
     }
 
-    /**
-     * 옷 업로드 작업 실행: PROCESSING → 분석 → COMPLETED/FAILED, SSE로 상태 전송.
-     * 트랜잭션 분리: 상태 변경/저장만 짧은 트랜잭션, GCS+Gemini 구간은 트랜잭션 없음.
-     */
     @Async("taskExecutor")
     public void startClothesUploadAndNotify(Long taskId, byte[] imageBytes, String filename, String category, User user) {
         setTaskProcessingAndNotify(taskId);
-
         try {
             Long clothesId = analyzeAndSaveClothesInternal(imageBytes, filename, category, user, true);
             setTaskCompletedAndNotify(taskId, clothesId);
         } catch (Exception e) {
             log.error("❌ 옷 업로드/분석 실패 taskId={}", taskId, e);
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-            if (msg != null && msg.length() > 500) {
-                msg = msg.substring(0, 500);
-            }
+            if (msg != null && msg.length() > 500) msg = msg.substring(0, 500);
             setTaskFailedAndNotify(taskId, msg);
         }
     }
@@ -137,9 +158,7 @@ public class ClothesAnalysisService {
         task.setStatus(ClothesUploadStatus.PROCESSING);
         clothesUploadTaskRepository.save(task);
         clothesUploadSseService.notifyStatus(taskId, ClothesUploadStatusResponse.builder()
-                .taskId(taskId)
-                .status(ClothesUploadStatus.PROCESSING)
-                .build());
+                .taskId(taskId).status(ClothesUploadStatus.PROCESSING).build());
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -151,10 +170,7 @@ public class ClothesAnalysisService {
         task.setErrorMessage(null);
         clothesUploadTaskRepository.save(task);
         clothesUploadSseService.notifyStatus(taskId, ClothesUploadStatusResponse.builder()
-                .taskId(taskId)
-                .status(ClothesUploadStatus.COMPLETED)
-                .clothesId(clothesId)
-                .build());
+                .taskId(taskId).status(ClothesUploadStatus.COMPLETED).clothesId(clothesId).build());
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -165,20 +181,13 @@ public class ClothesAnalysisService {
         task.setErrorMessage(errorMessage);
         clothesUploadTaskRepository.save(task);
         clothesUploadSseService.notifyStatus(taskId, ClothesUploadStatusResponse.builder()
-                .taskId(taskId)
-                .status(ClothesUploadStatus.FAILED)
-                .errorMessage(errorMessage)
-                .build());
+                .taskId(taskId).status(ClothesUploadStatus.FAILED).errorMessage(errorMessage).build());
     }
 
-    /**
-     * 가상피팅 입력용 - inCloset=false. 트랜잭션은 내부 saveClothesToDb에서만 짧게 사용.
-     */
     public Long analyzeAndSaveClothes(byte[] imageBytes, String filename, String category, User user) throws IOException {
         return analyzeAndSaveClothesInternal(imageBytes, filename, category, user, false);
     }
 
-    /** 내 옷장 동기 등록용. 트랜잭션은 내부 saveClothesToDb에서만 짧게 사용. */
     public Long analyzeAndSaveClothesSync(MultipartFile file, String category, User user) throws IOException {
         return analyzeAndSaveClothesInternal(file.getBytes(), file.getOriginalFilename(), category, user, true);
     }
