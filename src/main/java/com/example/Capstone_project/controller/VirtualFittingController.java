@@ -247,65 +247,30 @@ public class VirtualFittingController {
         }
     }
 
+// =========================================================================
+    // 아래 메서드를 기존 recommendByWeatherStyle() 와 교체하세요
+    // 위치: VirtualFittingController.java 맨 아래 } 바로 위
+    // =========================================================================
+
     @Operation(
-            summary = "스타일 추천",
-            description = "검색어(자연어)와 유사한 가상 피팅 결과를 최대 10개 추천합니다. 로그인 사용자 성별에 맞는 스타일만 반환, 유사도 0.7 이상."
+            summary = "날씨 기반 스타일 추천",
+            description = "기온 + 강수량 + 적설량 + 풍속 + 습도를 반영한 날씨 맞춤 스타일 추천. OpenWeatherMap 응답값을 그대로 넘겨주면 됩니다."
     )
-    @GetMapping("/recommendation/style")
-    public ResponseEntity<ApiResponse<StyleRecommendationResponse>> recommendByStyle(
-            @RequestParam("query") String query,
-            @AuthenticationPrincipal CustomUserDetails userDetails
-    ) {
-
-        Long userId = userDetails.getUser().getId();
-        final String cacheKey = "cache:style:" + userId + ":" + query;
-
-        try {
-            StringRedisTemplate redis = stringRedisTemplateProvider.getIfAvailable();
-            if (redis != null) {
-                //Redis 먼저 조회
-                String cached = redis.opsForValue().get(cacheKey);
-                if (cached != null) {
-                    StyleRecommendationResponse cachedBody =
-                            objectMapper.readValue(cached, StyleRecommendationResponse.class);
-
-                    return ResponseEntity.ok(
-                            ApiResponse.success("스타일 추천 결과 (cached)", cachedBody)
-                    );
-                }
-            }
-
-            //실제 추천 실행
-            var recommendations = styleRecommendationService.recommendByStyle(query, 0.7, userId);
-            StyleRecommendationResponse body =
-                    StyleRecommendationResponse.from(recommendations);
-
-            //Redis 60초 캐시
-            String json = objectMapper.writeValueAsString(body);
-            if (redis != null) {
-                redis.opsForValue().set(cacheKey, json, Duration.ofSeconds(60));
-            }
-
-            return ResponseEntity.ok(
-                    ApiResponse.success("스타일 추천 결과", body)
-            );
-
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(ApiResponse.error("추천 처리 실패: " + e.getMessage()));
-        }
-    }
-
     @GetMapping("/recommendation/weather-style")
     public ResponseEntity<ApiResponse<StyleRecommendationResponse>> recommendByWeatherStyle(
             @RequestParam("query") String query,
             @RequestParam("temp") double temp,
+            @RequestParam(value = "rain", defaultValue = "0.0") double rain,
+            @RequestParam(value = "snow", defaultValue = "0.0") double snow,
+            @RequestParam(value = "windSpeed", defaultValue = "0.0") double windSpeed,
+            @RequestParam(value = "humidity", defaultValue = "0") int humidity,
             @AuthenticationPrincipal CustomUserDetails userDetails
     ) {
         Long userId = userDetails.getUser().getId();
 
-        // temp를 키에 포함 (0.1도 단위로 정규화)
-        String tempKey = String.format(java.util.Locale.US, "%.1f", temp);
+        // 캐시 키에 날씨 조건 전체 포함
+        String tempKey = String.format(java.util.Locale.US, "%.1f_r%.1f_s%.1f_w%.1f_h%d",
+                temp, rain, snow, windSpeed, humidity);
         final String cacheKey = "cache:weather-style:" + userId + ":" + query + ":" + tempKey;
 
         try {
@@ -322,20 +287,22 @@ public class VirtualFittingController {
                 }
             }
 
-            var recommendations = styleRecommendationService
-                    .recommendByWeatherStyle(query, 0.7, userId, temp);
+            // WeatherCondition 객체로 변환 후 서비스 호출
+            StyleRecommendationService.WeatherCondition condition =
+                    new StyleRecommendationService.WeatherCondition(temp, rain, snow, windSpeed, humidity);
 
-            StyleRecommendationResponse body =
-                    StyleRecommendationResponse.from(recommendations);
+            var recommendations = styleRecommendationService
+                    .recommendByWeatherStyleFull(query, 0.7, userId, condition);
+
+            StyleRecommendationResponse body = StyleRecommendationResponse.from(recommendations);
 
             if (redis != null) {
                 String json = objectMapper.writeValueAsString(body);
                 redis.opsForValue().set(cacheKey, json, java.time.Duration.ofSeconds(60));
             }
 
-            return ResponseEntity.ok(
-                    ApiResponse.success("날씨 기반 스타일 추천 결과", body)
-            );
+            return ResponseEntity.ok(ApiResponse.success("날씨 기반 스타일 추천 결과", body));
+
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(ApiResponse.error("추천 처리 실패: " + e.getMessage()));
