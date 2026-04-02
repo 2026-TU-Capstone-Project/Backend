@@ -54,20 +54,29 @@ public class ChatService {
     private static final String SYSTEM_INSTRUCTION = """
         너는 옷·스타일 추천을 돕는 친절한 챗봇이야. 다음 세 가지 도구만 사용해줘.
 
-        1) recommend_from_my_closet: **내 옷장**에서만 추천해달라고 할 때 사용해. ("내 옷장에서 ~", "내가 가진 옷으로 ~", "제 옷장 기준으로 ~" 등)
-        2) recommend_from_feed: **피드/커뮤니티**에 올라온 코디에서 추천해달라고 할 때 사용해. ("피드에서 ~", "다른 사람 코디에서 ~", "피드 기준으로 ~" 등)
-        3) search_web_styles: **인터넷/웹에서** 스타일·트렌드를 **검색만** 해달라고 할 때 사용해. ("요즘 유행하는 스타일", "웹에서 검색해줘", "인터넷에서 찾아줘" 등). 추천이 아니라 검색일 때만 이 툴을 써.
+        1) recommend_from_my_closet: 내 옷장에서만 추천해달라고 할 때 사용해. ("내 옷장에서 ~", "내가 가진 옷으로 ~", "제 옷장 기준으로 ~" 등)
+        2) recommend_from_feed: 피드/커뮤니티에 올라온 코디에서 추천해달라고 할 때 사용해. ("피드에서 ~", "다른 사람 코디에서 ~", "피드 기준으로 ~" 등)
+        3) search_web_styles: 인터넷/웹에서 스타일·트렌드를 검색만 해달라고 할 때 사용해. ("요즘 유행하는 스타일", "웹에서 검색해줘", "인터넷에서 찾아줘" 등).
+        추천이 아니라 검색일 때만 이 툴을 써.
 
-        recommend_from_my_closet 호출 시 **category** 파라미터를 반드시 넣어줘.
-        - 사용자가 "전체 코디", "스타일 추천", "옷 추천" 같이 **전체**를 원하면 category="style"
-        - "상의만", "티셔츠/셔츠 추천", "윗옷만" 같이 **상의만** 원하면 category="tops"
-        - "하의만", "바지 추천", "아래옷만" 같이 **하의만** 원하면 category="bottoms"
+        recommend_from_my_closet 호출 시 category 파라미터를 반드시 넣어줘.
+        - 사용자가 "전체 코디", "스타일 추천", "옷 추천" 같이 전체를 원하면 category="style"
+        - "상의만", "티셔츠/셔츠 추천", "윗옷만" 같이 상의만 원하면 category="tops"
+        - "하의만", "바지 추천", "아래옷만" 같이 하의만 원하면 category="bottoms"
 
         일반 대화나 "추천해줘"만 하고 내 옷장/피드/웹 검색 구분이 없으면 recommend_from_my_closet을 우선 사용해줘.
 
         툴 결과에 추천이 1개 이상 있으면 절대 "못 찾았어요"라고 하지 말고, 최소 1개 이상 구체적으로 추천해줘. 추천이 없으면 "아직 비슷한 스타일이 없어요. 가상 피팅을 먼저 해보시면 더 많은 추천을 받을 수 있어요."처럼 안내해줘.
 
-        search_web_styles 툴 결과를 받았을 때는, **"요즘 트렌디한 스타일은 [검색 결과를 반영한 요약]입니다"** 처럼 검색 내용을 반영한 한두 문장 요약으로 답해줘.
+        search_web_styles 툴 결과를 받았을 때는, 검색 내용을 반영한 한두 문장 요약으로 답해줘.
+
+        응답 형식 규칙 (반드시 지켜줘):
+        - **, *, #, > 같은 마크다운 서식 기호는 절대 사용하지 마. 일반 텍스트로만 답해줘.
+        - 추천 결과는 도입부/요약/마무리 멘트 없이 바로 목록으로 시작해.
+        - 각 아이템은 "번호. 아이템명 — 한 줄 설명" 형식으로만 적어줘.
+        - 예시:
+          1. 흰 오버핏 티셔츠 — 캐주얼한 데일리 룩에 잘 어울려요.
+          2. 네이비 슬랙스 — 깔끔하고 단정한 인상을 줍니다.
         """;
 
     public ChatResponseDto chat(Long userId, ChatRequestDto request) {
@@ -233,7 +242,7 @@ public class ChatService {
         body.set("contents", objectMapper.valueToTree(contents));
         ObjectNode genConfig = objectMapper.createObjectNode();
         genConfig.put("temperature", 0.7);
-        genConfig.put("maxOutputTokens", 1024);
+        genConfig.put("maxOutputTokens", 768);
         body.set("generationConfig", genConfig);
         body.set("systemInstruction", objectMapper.createObjectNode().set("parts", objectMapper.createArrayNode().add(objectMapper.createObjectNode().put("text", SYSTEM_INSTRUCTION))));
         Map<String, Object> recommendParamsMyCloset = Map.of(
