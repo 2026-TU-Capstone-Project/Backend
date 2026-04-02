@@ -16,6 +16,14 @@ public interface FittingRepository extends JpaRepository<FittingTask, Long> {
 
     List<FittingTask> findByUserIdAndIsSavedTrue(Long userId);
 
+    boolean existsByTopId(Long topId);
+
+    boolean existsByBottomId(Long bottomId);
+
+    boolean existsByIsSavedTrueAndTopId(Long topId);
+
+    boolean existsByIsSavedTrueAndBottomId(Long bottomId);
+
     @Modifying
     @Query("UPDATE FittingTask ft SET ft.topId = null WHERE ft.topId = :clothesId")
     void clearTopIdByClothesId(@Param("clothesId") Long clothesId);
