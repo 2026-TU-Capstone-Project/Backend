@@ -97,6 +97,10 @@ public class FittingTask {
     @JoinColumn(name = "clothes_set_id")
     private ClothesSet clothesSet;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "fit_type", length = 20)
+    private FitType fitType; // 슬림핏, 레귤러핏, 오버핏
+
     // 생성자 (주문 들어왔을 때)
     public FittingTask(FittingStatus status) {
         this.status = status;

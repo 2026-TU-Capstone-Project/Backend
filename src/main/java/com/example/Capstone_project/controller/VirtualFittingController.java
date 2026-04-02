@@ -1,6 +1,7 @@
 package com.example.Capstone_project.controller;
 
 import com.example.Capstone_project.common.dto.ApiResponse;
+import com.example.Capstone_project.domain.FitType;
 import com.example.Capstone_project.domain.FittingTask;
 import com.example.Capstone_project.domain.User;
 import com.example.Capstone_project.config.CustomUserDetails;
@@ -60,6 +61,7 @@ public class VirtualFittingController {
             @Parameter(description = "전신 사진 (착용할 사람)", required = true) @RequestParam("user_image") MultipartFile userImage,
             @Parameter(description = "상의 이미지", required = true) @RequestParam("top_image") MultipartFile topImage,
             @Parameter(description = "하의 이미지 (선택)") @RequestParam(value = "bottom_image", required = false) MultipartFile bottomImage,
+            @Parameter(description = "핏 타입 (SLIM_FIT, REGULAR_FIT, OVERSIZED_FIT). 기본값: REGULAR_FIT") @RequestParam(value = "fit_type", required = false, defaultValue = "REGULAR_FIT") FitType fitType,
             @AuthenticationPrincipal CustomUserDetails userDetails
     ) {
         if (userImage.isEmpty() || topImage.isEmpty()) {
@@ -84,7 +86,8 @@ public class VirtualFittingController {
             final String bottomImageFilename = (bottomImage != null) ? bottomImage.getOriginalFilename() : null;
 
             final User user = userDetails.getUser();
-            final FittingTask task = fittingService.createFittingTask(user.getId(), null);
+            final FitType finalFitType = fitType;
+            final FittingTask task = fittingService.createFittingTask(user.getId(), null, fitType);
 
             CompletableFuture.runAsync(() -> {
                 String userImageFilename = userImage.getOriginalFilename();
@@ -98,7 +101,8 @@ public class VirtualFittingController {
                             bottomImageBytes,
                             bottomImageFilename,
                             clothesAnalysisService,
-                            user
+                            user,
+                            finalFitType
                     );
 
                 } catch (Exception e) {

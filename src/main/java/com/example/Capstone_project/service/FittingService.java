@@ -4,6 +4,7 @@ import com.example.Capstone_project.dto.SavedFittingResponseDto;
 import com.example.Capstone_project.dto.StyleAnalysisResult;
 import com.example.Capstone_project.dto.VirtualFittingResponse;
 import com.example.Capstone_project.dto.VirtualFittingStatusResponse;
+import com.example.Capstone_project.domain.FitType;
 import com.example.Capstone_project.domain.FittingStatus;
 import com.example.Capstone_project.domain.FittingTask;
 import com.example.Capstone_project.domain.User;
@@ -43,9 +44,15 @@ public class FittingService {
 
     @Transactional
     public FittingTask createFittingTask(Long userId, String bodyImgUrl) {
+        return createFittingTask(userId, bodyImgUrl, null);
+    }
+
+    @Transactional
+    public FittingTask createFittingTask(Long userId, String bodyImgUrl, FitType fitType) {
         FittingTask task = new FittingTask(FittingStatus.WAITING);
         task.setUserId(userId);
         task.setBodyImgUrl(bodyImgUrl);
+        task.setFitType(fitType);
         return fittingRepository.save(task);
     }
 
@@ -59,23 +66,28 @@ public class FittingService {
     }
 
     public void processFitting(Long taskId, byte[] userImgData, String userImageFilename, byte[] topImgData, byte[] bottomImgData) {
-        processFitting(taskId, userImgData, userImageFilename, topImgData, bottomImgData, System.currentTimeMillis());
+        processFitting(taskId, userImgData, userImageFilename, topImgData, bottomImgData, System.currentTimeMillis(), null);
     }
 
     public void processFitting(Long taskId, byte[] userImgData, String userImageFilename, byte[] topImgData, byte[] bottomImgData, long processStartTime) {
+        processFitting(taskId, userImgData, userImageFilename, topImgData, bottomImgData, processStartTime, null);
+    }
+
+    public void processFitting(Long taskId, byte[] userImgData, String userImageFilename, byte[] topImgData, byte[] bottomImgData, long processStartTime, FitType fitType) {
         long startTime = System.currentTimeMillis();
-        log.info("🚀 가상 피팅 작업 시작 - Task ID: {}", taskId);
+        log.info("🚀 가상 피팅 작업 시작 - Task ID: {}, fitType: {}", taskId, fitType);
 
         try {
             // 1) 상태를 PROCESSING으로 먼저 변경 (짧은 트랜잭션)
             updateTaskStatus(taskId, FittingStatus.PROCESSING);
 
             // 2) 가장 오래 걸리는 Gemini 가상 피팅 호출
+            String prompt = buildPromptWithFitType(fitType);
             VirtualFittingResponse response = geminiService.processVirtualFitting(
                     userImgData,
                     topImgData,
                     bottomImgData,
-                    null, null, null
+                    prompt, null, null
             );
 
             if (response != null && "completed".equals(response.getStatus())) {
@@ -220,10 +232,11 @@ public class FittingService {
             byte[] bottomImageBytes,
             String bottomImageFilename,
             ClothesAnalysisService clothesAnalysisService,
-            User user
+            User user,
+            FitType fitType
     ) {
         long processStartTime = System.currentTimeMillis();
-        log.info("🚀 [비동기] 가상 피팅 전체 프로세스 시작 - Task ID: {}", taskId);
+        log.info("🚀 [비동기] 가상 피팅 전체 프로세스 시작 - Task ID: {}, fitType: {}", taskId, fitType);
 
         try {
             if (topImageBytes == null && bottomImageBytes == null) {
@@ -235,7 +248,7 @@ public class FittingService {
             // === 1. 가상 피팅을 먼저 시작 (가장 오래 걸리는 작업) ===
             final long pStart = processStartTime;
             final CompletableFuture<Void> fittingFuture = CompletableFuture.runAsync(() -> {
-                processFitting(taskId, userImageBytes, userImageFilename, topImageBytes, bottomImageBytes, pStart);
+                processFitting(taskId, userImageBytes, userImageFilename, topImageBytes, bottomImageBytes, pStart, fitType);
             }, taskExecutor);
 
             // === 2. 2초 후 옷 분석 시작 (Rate Limit 회피, 동시 2개씩만 Gemini 호출) ===
@@ -348,6 +361,17 @@ public class FittingService {
         return result;
     }
 
+    private String buildPromptWithFitType(FitType fitType) {
+        if (fitType == null) return null;
+        String base = "Put the provided top and bottom garments on the person in the full-body photo.";
+        String fitDesc = switch (fitType) {
+            case SLIM_FIT -> " Show the garment as a slim fit — fitting closely to the body with a tailored, tight silhouette.";
+            case REGULAR_FIT -> " Show the garment as a regular fit — standard comfortable silhouette, not too tight or too loose.";
+            case OVERSIZED_FIT -> " Show the garment as an oversized fit — loose and relaxed, hanging away from the body.";
+        };
+        return base + fitDesc;
+    }
+
     @Transactional
     public void saveTask(FittingTask task) {
         fittingRepository.save(task);
@@ -368,11 +392,12 @@ public class FittingService {
         Long bottomId = task.getBottomId();
         String bodyImgUrl = task.getBodyImgUrl();
         String resultImgUrl = task.getResultImgUrl();
+        boolean taskWasSaved = task.isSaved();
 
         fittingRepository.delete(task);
         log.info("🗑️ FittingTask 삭제 완료 - taskId: {}, userId: {} (GCS/Clothes 정리는 비동기 처리)", taskId, userId);
 
-        fittingCleanupService.cleanupAfterTaskDelete(bodyImgUrl, resultImgUrl, topId, bottomId);
+        fittingCleanupService.cleanupAfterTaskDelete(bodyImgUrl, resultImgUrl, topId, bottomId, taskWasSaved);
         return true;
     }
 
