@@ -17,7 +17,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 
-@Tag(name = "User", description = "마이페이지·추가정보 조회/수정")
+@Tag(name = "User", description = "마이페이지 정보 추가/조회/수정")
 @RestController
 @RequestMapping("/api/v1/users")
 @RequiredArgsConstructor
@@ -31,6 +31,38 @@ public class UserController {
         Long userId = userDetails.getUser().getId();
         UserProfileResponseDto profile = userService.getMyProfile(userId);
         return ResponseEntity.ok(ApiResponse.success("마이페이지 조회 성공", profile));
+    }
+
+    @Operation(
+            summary = "마이 페이지 프로필 추가 (최초 설정)",
+            description = "최초 로그인 후 신체정보(키, 몸무게, 성별)와 프로필 이미지를 설정합니다. 보내진 필드만 저장됩니다. 성별은 MALE 또는 FEMALE."
+    )
+    @PostMapping(value = "/me", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<ApiResponse<UserProfileResponseDto>> createMyProfile(
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            @Parameter(description = "키 (cm)") @RequestParam(value = "height", required = false) Float height,
+            @Parameter(description = "몸무게 (kg)") @RequestParam(value = "weight", required = false) Float weight,
+            @Parameter(description = "성별 (MALE, FEMALE)") @RequestParam(value = "gender", required = false) String gender,
+            @Parameter(description = "프로필 이미지 파일 (선택)") @RequestParam(value = "file", required = false) MultipartFile file
+    ) {
+        Long userId = userDetails.getUser().getId();
+        byte[] imageBytes = null;
+        String imageFilename = null;
+        String imageContentType = null;
+        if (file != null && !file.isEmpty()) {
+            try {
+                imageBytes = file.getBytes();
+                imageFilename = file.getOriginalFilename() != null ? file.getOriginalFilename() : "profile.jpg";
+                imageContentType = file.getContentType();
+            } catch (IOException e) {
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                        .body(ApiResponse.error("프로필 이미지 파일 읽기 실패: " + e.getMessage()));
+            }
+        }
+        UserProfileResponseDto created = userService.updateMyProfileWithForm(
+                userId, null, height, weight, gender, imageBytes, imageFilename, imageContentType
+        );
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success("프로필이 설정되었습니다.", created));
     }
 
     @Operation(
