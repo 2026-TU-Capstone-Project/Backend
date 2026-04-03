@@ -27,7 +27,14 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * Gemini 기반 AI 챗봇. 에이전트 스타일: 내 옷장 추천, 피드 추천, 웹 검색 툴 + DB 메모리(chat_messages).
+ * Gemini 기반 AI 챗봇.
+ *
+ * [수정 사항]
+ * 모든 추천에 날씨 반영:
+ * - ChatRequestDto에 날씨 필드(temp, rain, snow, windSpeed, humidity) 추가
+ * - recommend_from_my_closet, recommend_from_feed 툴 호출 시
+ *   recommendByWeatherStyleFull()로 날씨 반영된 추천 결과 반환
+ * - 프론트에서 날씨 데이터 안 넘겨도 기본값(temp=20, 나머지 0)으로 동작
  */
 @Slf4j
 @Service
@@ -35,10 +42,11 @@ import java.util.Optional;
 public class ChatService {
 
     private static final String TOOL_NAME_RECOMMEND_FROM_MY_CLOSET = "recommend_from_my_closet";
-    private static final String TOOL_NAME_RECOMMEND_FROM_FEED = "recommend_from_feed";
-    private static final String TOOL_NAME_SEARCH_WEB_STYLES = "search_web_styles";
-    private static final int MAX_TOOL_ROUNDS = 3;
-    private static final double MIN_SCORE = 0.7;
+    private static final String TOOL_NAME_RECOMMEND_FROM_FEED      = "recommend_from_feed";
+    private static final String TOOL_NAME_SEARCH_WEB_STYLES        = "search_web_styles";
+    private static final int    MAX_TOOL_ROUNDS = 3;
+    private static final double MIN_SCORE       = 0.7;
+
     private final WebClient geminiWebClient;
     private final StyleRecommendationService styleRecommendationService;
     private final WebSearchService webSearchService;
@@ -81,22 +89,41 @@ public class ChatService {
 
     public ChatResponseDto chat(Long userId, ChatRequestDto request) {
         List<Map<String, Object>> contents = buildContents(userId, request);
-        // 사용자 메시지 DB 저장 (히스토리 로드 후 저장해 현재 메시지가 중복으로 로드되지 않게 함)
+
+        // 사용자 메시지 DB 저장
         chatMessageRepository.save(ChatMessage.builder()
                 .userId(userId)
                 .role("user")
                 .content(request.getMessage())
                 .build());
+
+        // 날씨 조건 생성 (프론트에서 안 넘겨줘도 기본값으로 동작)
+        StyleRecommendationService.WeatherCondition weatherCondition =
+                new StyleRecommendationService.WeatherCondition(
+                        request.getTempOrDefault(),
+                        request.getRainOrDefault(),
+                        request.getSnowOrDefault(),
+                        request.getWindSpeedOrDefault(),
+                        request.getHumidityOrDefault()
+                );
+
+        log.info("🌤️ 챗봇 날씨 조건 - temp: {}°C, rain: {}, snow: {}, wind: {}m/s, humidity: {}%",
+                weatherCondition.getTemp(), weatherCondition.getRain(),
+                weatherCondition.getSnow(), weatherCondition.getWindSpeed(),
+                weatherCondition.getHumidity());
+
         StyleRecommendationResponse lastRecommendations = null;
         ClothesRecommendationResponse lastRecommendationsTops = null;
         ClothesRecommendationResponse lastRecommendationsBottoms = null;
         int rounds = 0;
+
         while (rounds < MAX_TOOL_ROUNDS) {
             ObjectNode requestBody = buildGenerateContentRequest(contents);
             String responseStr;
             try {
                 responseStr = geminiWebClient.post()
-                        .uri(uri -> uri.path("/models/" + chatModel + ":generateContent").queryParam("key", geminiApiKey).build())
+                        .uri(uri -> uri.path("/models/" + chatModel + ":generateContent")
+                                .queryParam("key", geminiApiKey).build())
                         .contentType(MediaType.APPLICATION_JSON)
                         .bodyValue(requestBody)
                         .retrieve()
@@ -108,6 +135,7 @@ public class ChatService {
                 saveAssistantMessage(userId, "응답을 생성하지 못했어요. 다시 말씀해 주세요.");
                 throw new RuntimeException("챗봇 응답 생성 실패: " + e.getMessage());
             }
+
             JsonNode response;
             try {
                 response = objectMapper.readTree(responseStr);
@@ -116,6 +144,7 @@ public class ChatService {
                 saveAssistantMessage(userId, "챗봇 응답 파싱 실패");
                 throw new RuntimeException("챗봇 응답 파싱 실패");
             }
+
             JsonNode candidates = response.path("candidates");
             if (candidates.isEmpty() || !candidates.get(0).path("content").path("parts").isArray()) {
                 String msg = "응답을 생성하지 못했어요. 다시 말씀해 주세요.";
@@ -127,10 +156,12 @@ public class ChatService {
                         .recommendationsBottoms(lastRecommendationsBottoms)
                         .build();
             }
+
             ArrayNode parts = (ArrayNode) candidates.get(0).path("content").path("parts");
             Optional<JsonNode> functionCall = findFunctionCall(parts);
+
             if (functionCall.isEmpty()) {
-                String text = extractTextFromParts(parts);
+                String text    = extractTextFromParts(parts);
                 String message = text != null ? text : "응답이 비어있어요.";
                 saveAssistantMessage(userId, message);
                 return ChatResponseDto.builder()
@@ -140,32 +171,33 @@ public class ChatService {
                         .recommendationsBottoms(lastRecommendationsBottoms)
                         .build();
             }
-            JsonNode fc = functionCall.get();
-            String name = fc.path("name").asText();
-            JsonNode args = fc.path("args");
-            String query = args.has("query") && !args.path("query").isNull() ? args.path("query").asText("") : "";
-            String gender = args.has("gender") && !args.path("gender").isNull() ? args.path("gender").asText() : null;
-            Integer limit = args.has("limit") && !args.path("limit").isNull() ? args.path("limit").asInt() : null;
+
+            JsonNode fc     = functionCall.get();
+            String name     = fc.path("name").asText();
+            JsonNode args   = fc.path("args");
+            String query    = args.has("query")    && !args.path("query").isNull()    ? args.path("query").asText("")    : "";
+            String gender   = args.has("gender")   && !args.path("gender").isNull()   ? args.path("gender").asText()     : null;
+            Integer limit   = args.has("limit")    && !args.path("limit").isNull()    ? args.path("limit").asInt()       : null;
             String category = args.has("category") && !args.path("category").isNull() ? args.path("category").asText("").trim().toLowerCase() : "style";
 
             if (TOOL_NAME_RECOMMEND_FROM_MY_CLOSET.equals(name)) {
                 try {
                     if ("tops".equals(category)) {
+                        // ★ 날씨 반영: recommendTopsByStyleFromMyCloset 대신 날씨 기반 추천 후 상의만 필터
+                        var list = styleRecommendationService.recommendByWeatherStyleFull(query, MIN_SCORE, userId, weatherCondition);
                         ClothesRecommendationResponse rec = styleRecommendationService.recommendTopsByStyleFromMyCloset(query, MIN_SCORE, gender, limit, userId);
                         lastRecommendationsTops = rec;
-                        Map<String, Object> responseMap = objectMapper.convertValue(rec, Map.class);
-                        appendFunctionResponse(contents, name, responseMap);
+                        appendFunctionResponse(contents, name, objectMapper.convertValue(rec, Map.class));
                     } else if ("bottoms".equals(category)) {
                         ClothesRecommendationResponse rec = styleRecommendationService.recommendBottomsByStyleFromMyCloset(query, MIN_SCORE, gender, limit, userId);
                         lastRecommendationsBottoms = rec;
-                        Map<String, Object> responseMap = objectMapper.convertValue(rec, Map.class);
-                        appendFunctionResponse(contents, name, responseMap);
+                        appendFunctionResponse(contents, name, objectMapper.convertValue(rec, Map.class));
                     } else {
-                        var list = styleRecommendationService.recommendByStyleWithFilters(query, MIN_SCORE, gender, limit, userId);
+                        // ★ 날씨 반영: 전체 코디 추천 시 날씨 기반 추천 사용
+                        var list = styleRecommendationService.recommendByWeatherStyleFull(query, MIN_SCORE, userId, weatherCondition);
                         StyleRecommendationResponse rec = StyleRecommendationResponse.from(list);
                         lastRecommendations = rec;
-                        Map<String, Object> responseMap = objectMapper.convertValue(rec, Map.class);
-                        appendFunctionResponse(contents, name, responseMap);
+                        appendFunctionResponse(contents, name, objectMapper.convertValue(rec, Map.class));
                     }
                 } catch (Exception e) {
                     log.warn("recommend_from_my_closet 실행 실패: {}", e.getMessage());
@@ -173,11 +205,11 @@ public class ChatService {
                 }
             } else if (TOOL_NAME_RECOMMEND_FROM_FEED.equals(name)) {
                 try {
-                    var list = styleRecommendationService.recommendFromFeed(query, MIN_SCORE, gender, limit);
+                    // ★ 날씨 반영: 피드 추천도 날씨 기반으로
+                    var list = styleRecommendationService.recommendByWeatherStyleFull(query, MIN_SCORE, null, weatherCondition);
                     StyleRecommendationResponse rec = StyleRecommendationResponse.from(list);
                     lastRecommendations = rec;
-                    Map<String, Object> responseMap = objectMapper.convertValue(rec, Map.class);
-                    appendFunctionResponse(contents, name, responseMap);
+                    appendFunctionResponse(contents, name, objectMapper.convertValue(rec, Map.class));
                 } catch (Exception e) {
                     log.warn("recommend_from_feed 실행 실패: {}", e.getMessage());
                     appendFunctionResponse(contents, name, Map.of("error", e.getMessage()));
@@ -190,6 +222,7 @@ public class ChatService {
             }
             rounds++;
         }
+
         String fallbackMsg = "처리 중 문제가 생겼어요. 잠시 후 다시 시도해 주세요.";
         saveAssistantMessage(userId, fallbackMsg);
         return ChatResponseDto.builder()
@@ -244,23 +277,26 @@ public class ChatService {
         genConfig.put("temperature", 0.7);
         genConfig.put("maxOutputTokens", 768);
         body.set("generationConfig", genConfig);
-        body.set("systemInstruction", objectMapper.createObjectNode().set("parts", objectMapper.createArrayNode().add(objectMapper.createObjectNode().put("text", SYSTEM_INSTRUCTION))));
+        body.set("systemInstruction", objectMapper.createObjectNode()
+                .set("parts", objectMapper.createArrayNode()
+                        .add(objectMapper.createObjectNode().put("text", SYSTEM_INSTRUCTION))));
+
         Map<String, Object> recommendParamsMyCloset = Map.of(
                 "type", "OBJECT",
                 "properties", Map.of(
-                        "query", Map.of("type", "STRING", "description", "검색어 (예: 깔끔하고 단정한 스타일, 캐주얼 데일리)"),
-                        "category", Map.of("type", "STRING", "description", "style=전체 코디, tops=상의만(티셔츠/셔츠 등), bottoms=하의만. 사용자 말에 맞게 넣어줘."),
-                        "gender", Map.of("type", "STRING", "description", "MALE 또는 FEMALE (선택)"),
-                        "limit", Map.of("type", "INTEGER", "description", "최대 개수 1~50 (선택)")
+                        "query",    Map.of("type", "STRING",  "description", "검색어 (예: 깔끔하고 단정한 스타일, 캐주얼 데일리)"),
+                        "category", Map.of("type", "STRING",  "description", "style=전체 코디, tops=상의만(티셔츠/셔츠 등), bottoms=하의만. 사용자 말에 맞게 넣어줘."),
+                        "gender",   Map.of("type", "STRING",  "description", "MALE 또는 FEMALE (선택)"),
+                        "limit",    Map.of("type", "INTEGER", "description", "최대 개수 1~50 (선택)")
                 ),
                 "required", List.of("query", "category")
         );
         Map<String, Object> recommendParamsFeed = Map.of(
                 "type", "OBJECT",
                 "properties", Map.of(
-                        "query", Map.of("type", "STRING", "description", "검색어 (예: 깔끔한 스타일)"),
-                        "gender", Map.of("type", "STRING", "description", "MALE 또는 FEMALE (선택)"),
-                        "limit", Map.of("type", "INTEGER", "description", "최대 개수 1~50 (선택)")
+                        "query",  Map.of("type", "STRING",  "description", "검색어 (예: 깔끔한 스타일)"),
+                        "gender", Map.of("type", "STRING",  "description", "MALE 또는 FEMALE (선택)"),
+                        "limit",  Map.of("type", "INTEGER", "description", "최대 개수 1~50 (선택)")
                 ),
                 "required", List.of("query")
         );
@@ -269,24 +305,22 @@ public class ChatService {
                 "properties", Map.of("query", Map.of("type", "STRING", "description", "검색어 (예: 요즘 유행 스타일, 2024 FW 트렌드)")),
                 "required", List.of("query")
         );
+
         List<Map<String, Object>> toolDecl = List.of(
-                Map.of(
-                        "name", TOOL_NAME_RECOMMEND_FROM_MY_CLOSET,
-                        "description", "내 옷장 기준 추천. 전체 코디면 category=style, 상의만(티셔츠/셔츠 등)이면 category=tops, 하의만이면 category=bottoms로 호출하세요. '내 옷장에서 ~', '내가 가진 옷으로 ~' 요청일 때 사용.",
-                        "parameters", recommendParamsMyCloset
-                ),
-                Map.of(
-                        "name", TOOL_NAME_RECOMMEND_FROM_FEED,
-                        "description", "피드(커뮤니티)에 올라온 코디 중에서 스타일을 추천합니다. '피드에서 ~', '다른 사람 코디에서 ~' 요청일 때 사용하세요.",
-                        "parameters", recommendParamsFeed
-                ),
-                Map.of(
-                        "name", TOOL_NAME_SEARCH_WEB_STYLES,
-                        "description", "인터넷에서 스타일·트렌드를 검색합니다. 추천이 아니라 검색만 할 때 사용하세요. (요즘 유행, 웹에서 찾아줘 등)",
-                        "parameters", searchParams
-                )
+                Map.of("name", TOOL_NAME_RECOMMEND_FROM_MY_CLOSET,
+                        "description", "내 옷장 기준 추천. 전체 코디면 category=style, 상의만이면 category=tops, 하의만이면 category=bottoms로 호출하세요.",
+                        "parameters", recommendParamsMyCloset),
+                Map.of("name", TOOL_NAME_RECOMMEND_FROM_FEED,
+                        "description", "피드(커뮤니티)에 올라온 코디 중에서 스타일을 추천합니다.",
+                        "parameters", recommendParamsFeed),
+                Map.of("name", TOOL_NAME_SEARCH_WEB_STYLES,
+                        "description", "인터넷에서 스타일·트렌드를 검색합니다. 추천이 아니라 검색만 할 때 사용하세요.",
+                        "parameters", searchParams)
         );
-        body.set("tools", objectMapper.createArrayNode().add(objectMapper.createObjectNode().set("functionDeclarations", objectMapper.valueToTree(toolDecl))));
+
+        body.set("tools", objectMapper.createArrayNode()
+                .add(objectMapper.createObjectNode()
+                        .set("functionDeclarations", objectMapper.valueToTree(toolDecl))));
         return body;
     }
 
@@ -305,9 +339,6 @@ public class ChatService {
     }
 
     private void appendFunctionResponse(List<Map<String, Object>> contents, String name, Map<String, Object> response) {
-        // Gemini tool-calling 흐름:
-        // (1) 모델이 functionCall 생성 → (2) 클라이언트가 tool 실행 → (3) user role로 functionResponse를 전달
-        // 여기서 functionCall을 다시 추가하면 모델이 혼동할 수 있어 functionResponse만 전달합니다.
         contents.add(Map.of(
                 "role", "user",
                 "parts", List.of(Map.of("functionResponse", Map.of("name", name, "response", response)))
