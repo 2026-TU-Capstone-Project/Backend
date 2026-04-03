@@ -56,3 +56,5 @@ src/main/resources/application-secret.properties
 *.properties
 !src/test/resources/application-test.properties
 google-key.json
+
+Frontend/
