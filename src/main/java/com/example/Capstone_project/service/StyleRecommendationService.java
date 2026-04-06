@@ -353,7 +353,23 @@ public class StyleRecommendationService {
         List<Long> ids = idWithDistance.stream()
                 .map(row -> ((Number) row[0]).longValue())
                 .toList();
-        Map<Long, FittingTask> taskMap = fittingRepository.findAllByIdInWithClothes(ids).stream()
+
+        List<FittingTask> loadedTasks;
+        try {
+            loadedTasks = fittingRepository.findAllByIdInWithClothes(ids);
+        } catch (Exception e) {
+            log.warn("배치 로드 실패, 개별 로드로 전환: {}", e.getMessage());
+            loadedTasks = new ArrayList<>();
+            for (Long id : ids) {
+                try {
+                    fittingRepository.findByIdWithClothes(id).ifPresent(loadedTasks::add);
+                } catch (Exception ex) {
+                    log.warn("FittingTask {} 스킵 (삭제된 옷 참조): {}", id, ex.getMessage());
+                }
+            }
+        }
+
+        Map<Long, FittingTask> taskMap = loadedTasks.stream()
                 .collect(Collectors.toMap(FittingTask::getId, t -> t));
 
         List<FittingTaskWithScore> results = new ArrayList<>();
