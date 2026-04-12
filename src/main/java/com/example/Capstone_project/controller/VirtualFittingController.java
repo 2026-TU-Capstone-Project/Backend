@@ -62,7 +62,8 @@ public class VirtualFittingController {
             @Parameter(description = "전신 사진 (착용할 사람)", required = true) @RequestParam("user_image") MultipartFile userImage,
             @Parameter(description = "상의 이미지", required = true) @RequestParam("top_image") MultipartFile topImage,
             @Parameter(description = "하의 이미지 (선택)") @RequestParam(value = "bottom_image", required = false) MultipartFile bottomImage,
-            @Parameter(description = "핏 타입 (SLIM_FIT, REGULAR_FIT, OVERSIZED_FIT). 기본값: REGULAR_FIT") @RequestParam(value = "fit_type", required = false, defaultValue = "REGULAR_FIT") FitType fitType,
+            @Parameter(description = "상의 핏 타입 (SLIM_FIT, REGULAR_FIT, OVERSIZED_FIT). 기본값: REGULAR_FIT") @RequestParam(value = "top_fit_type", required = false, defaultValue = "REGULAR_FIT") FitType topFitType,
+            @Parameter(description = "하의 핏 타입 (SLIM_FIT, REGULAR_FIT, OVERSIZED_FIT). 기본값: REGULAR_FIT") @RequestParam(value = "bottom_fit_type", required = false, defaultValue = "REGULAR_FIT") FitType bottomFitType,
             @AuthenticationPrincipal CustomUserDetails userDetails
     ) {
         if (userImage.isEmpty() || topImage.isEmpty()) {
@@ -87,8 +88,9 @@ public class VirtualFittingController {
             final String bottomImageFilename = (bottomImage != null) ? bottomImage.getOriginalFilename() : null;
 
             final User user = userDetails.getUser();
-            final FitType finalFitType = fitType;
-            final FittingTask task = fittingService.createFittingTask(user.getId(), null, fitType);
+            final FitType finalTopFitType = topFitType;
+            final FitType finalBottomFitType = bottomFitType;
+            final FittingTask task = fittingService.createFittingTask(user.getId(), null, topFitType, bottomFitType);
 
             CompletableFuture.runAsync(() -> {
                 String userImageFilename = userImage.getOriginalFilename();
@@ -103,7 +105,8 @@ public class VirtualFittingController {
                             bottomImageFilename,
                             clothesAnalysisService,
                             user,
-                            finalFitType
+                            finalTopFitType,
+                            finalBottomFitType
                     );
 
                 } catch (Exception e) {
