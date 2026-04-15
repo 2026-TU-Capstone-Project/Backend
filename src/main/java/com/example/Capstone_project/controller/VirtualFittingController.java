@@ -14,6 +14,7 @@ import com.example.Capstone_project.service.FittingService;
 import com.example.Capstone_project.service.RedisLockService;
 import com.example.Capstone_project.service.StyleRecommendationService;
 import com.example.Capstone_project.service.VirtualFittingSseService;
+import com.example.Capstone_project.dto.WeatherConditionDto;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -292,11 +293,10 @@ public class VirtualFittingController {
             }
 
             // WeatherCondition 객체로 변환 후 서비스 호출
-            StyleRecommendationService.WeatherCondition condition =
-                    new StyleRecommendationService.WeatherCondition(temp, rain, snow, windSpeed, humidity);
+            WeatherConditionDto condition = new WeatherConditionDto(temp, rain, snow, windSpeed, humidity);
 
             var recommendations = styleRecommendationService
-                    .recommendByWeatherStyleFull(query, 0.7, userId, condition);
+                    .recommendByWeather(query, 0.7, userId, condition);
 
             StyleRecommendationResponse body = StyleRecommendationResponse.from(recommendations);
 

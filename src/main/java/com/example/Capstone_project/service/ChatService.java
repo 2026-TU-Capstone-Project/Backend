@@ -6,6 +6,7 @@ import com.example.Capstone_project.dto.ChatResponseDto;
 import com.example.Capstone_project.dto.ClothesRecommendationResponse;
 import com.example.Capstone_project.dto.StyleRecommendationResponse;
 import com.example.Capstone_project.repository.ChatMessageRepository;
+import com.example.Capstone_project.dto.WeatherConditionDto;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -33,7 +34,7 @@ import java.util.Optional;
  * 모든 추천에 날씨 반영:
  * - ChatRequestDto에 날씨 필드(temp, rain, snow, windSpeed, humidity) 추가
  * - recommend_from_my_closet, recommend_from_feed 툴 호출 시
- *   recommendByWeatherStyleFull()로 날씨 반영된 추천 결과 반환
+ *   recommendByWeather()로 날씨 반영된 추천 결과 반환
  * - 프론트에서 날씨 데이터 안 넘겨도 기본값(temp=20, 나머지 0)으로 동작
  */
 @Slf4j
@@ -98,8 +99,7 @@ public class ChatService {
                 .build());
 
         // 날씨 조건 생성 (프론트에서 안 넘겨줘도 기본값으로 동작)
-        StyleRecommendationService.WeatherCondition weatherCondition =
-                new StyleRecommendationService.WeatherCondition(
+        WeatherConditionDto weatherCondition = new WeatherConditionDto(
                         request.getTempOrDefault(),
                         request.getRainOrDefault(),
                         request.getSnowOrDefault(),
@@ -184,7 +184,7 @@ public class ChatService {
                 try {
                     if ("tops".equals(category)) {
                         // ★ 날씨 반영: recommendTopsByStyleFromMyCloset 대신 날씨 기반 추천 후 상의만 필터
-                        var list = styleRecommendationService.recommendByWeatherStyleFull(query, MIN_SCORE, userId, weatherCondition);
+                        var list = styleRecommendationService.recommendByWeather(query, MIN_SCORE, userId, weatherCondition);
                         ClothesRecommendationResponse rec = styleRecommendationService.recommendTopsByStyleFromMyCloset(query, MIN_SCORE, gender, limit, userId);
                         lastRecommendationsTops = rec;
                         appendFunctionResponse(contents, name, objectMapper.convertValue(rec, Map.class));
@@ -194,7 +194,7 @@ public class ChatService {
                         appendFunctionResponse(contents, name, objectMapper.convertValue(rec, Map.class));
                     } else {
                         // ★ 날씨 반영: 전체 코디 추천 시 날씨 기반 추천 사용
-                        var list = styleRecommendationService.recommendByWeatherStyleFull(query, MIN_SCORE, userId, weatherCondition);
+                        var list = styleRecommendationService.recommendByWeather(query, MIN_SCORE, userId, weatherCondition);
                         StyleRecommendationResponse rec = StyleRecommendationResponse.from(list);
                         lastRecommendations = rec;
                         appendFunctionResponse(contents, name, objectMapper.convertValue(rec, Map.class));
@@ -206,7 +206,7 @@ public class ChatService {
             } else if (TOOL_NAME_RECOMMEND_FROM_FEED.equals(name)) {
                 try {
                     // ★ 날씨 반영: 피드 추천도 날씨 기반으로
-                    var list = styleRecommendationService.recommendByWeatherStyleFull(query, MIN_SCORE, null, weatherCondition);
+                    var list = styleRecommendationService.recommendByWeather(query, MIN_SCORE, null, weatherCondition);
                     StyleRecommendationResponse rec = StyleRecommendationResponse.from(list);
                     lastRecommendations = rec;
                     appendFunctionResponse(contents, name, objectMapper.convertValue(rec, Map.class));
