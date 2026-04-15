@@ -313,7 +313,7 @@ public class StyleRecommendationService {
         }
 
         List<Long> orderedIds = idToBestScore.entrySet().stream()
-                .sorted(Comparator.<Map.Entry<Long, Double>>comparingByValue().reversed())
+                .sorted(Comparator.<Map.Entry<Long, Double>>comparingDouble(Map.Entry::getValue).reversed())
                 .limit(limit)
                 .map(Map.Entry::getKey)
                 .toList();
