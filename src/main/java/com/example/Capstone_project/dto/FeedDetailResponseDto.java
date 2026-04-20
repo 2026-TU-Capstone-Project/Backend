@@ -20,6 +20,8 @@ public class FeedDetailResponseDto {
     private Long authorId;
     @Schema(description = "작성자 닉네임")
     private String authorNickname;
+    @Schema(description = "작성자 프로필 이미지 URL")
+    private String authorProfileImageUrl;
     @Schema(description = "스타일 이미지 URL")
     private String styleImageUrl;
     @Schema(description = "스타일 이미지(가상 피팅 작업) ID")
@@ -40,12 +42,17 @@ public class FeedDetailResponseDto {
     private String feedTitle;
     @Schema(description = "피드 내용")
     private String feedContent;
+    @Schema(description = "좋아요 수")
+    private int likeCount;
+    @Schema(description = "현재 사용자 좋아요 여부")
+    private boolean isLiked;
 
     public static FeedDetailResponseDto from(Feed feed) {
         if (feed == null) return null;
         return FeedDetailResponseDto.builder()
                 .authorId(feed.getUser().getId())
                 .authorNickname(feed.getUser().getNickname() != null ? feed.getUser().getNickname() : "")
+                .authorProfileImageUrl(feed.getUser().getProfileImageUrl())
                 .styleImageUrl(feed.getStyleImageUrl())
                 .styleImageId(feed.getFittingTaskId())
                 .topImageUrl(feed.getTopImageUrl())

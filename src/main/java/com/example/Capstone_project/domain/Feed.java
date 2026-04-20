@@ -8,7 +8,10 @@ import lombok.Setter;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "feeds")
+@Table(name = "feeds", indexes = {
+        @Index(name = "idx_feeds_deleted_created", columnList = "deleted_at, created_at DESC"),
+        @Index(name = "idx_feeds_user_deleted_created", columnList = "user_id, deleted_at, created_at DESC")
+})
 @Getter
 @Setter
 @NoArgsConstructor
@@ -61,6 +64,10 @@ public class Feed {
 
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "visibility", nullable = false, length = 20)
+    private FeedVisibility visibility = FeedVisibility.PUBLIC;
 
     @PrePersist
     public void onCreate() {
