@@ -25,10 +25,17 @@ public class GlobalExceptionHandler {
 			.body(ApiResponse.error(e.getMessage()));
 	}
 
+	@ExceptionHandler(ForbiddenException.class)
+	public ResponseEntity<ApiResponse<?>> handleForbiddenException(ForbiddenException e) {
+		log.warn("Forbidden: {}", e.getMessage());
+		return ResponseEntity.status(HttpStatus.FORBIDDEN)
+			.body(ApiResponse.error(e.getMessage()));
+	}
+
 	@ExceptionHandler(IllegalArgumentException.class)
 	public ResponseEntity<ApiResponse<?>> handleIllegalArgument(IllegalArgumentException e) {
 		log.warn("Illegal argument: {}", e.getMessage());
-		return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+		return ResponseEntity.status(HttpStatus.BAD_REQUEST)
 			.body(ApiResponse.error(e.getMessage()));
 	}
 

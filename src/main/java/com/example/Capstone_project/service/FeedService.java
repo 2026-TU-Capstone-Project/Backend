@@ -1,20 +1,27 @@
 package com.example.Capstone_project.service;
 
+import com.example.Capstone_project.common.exception.ForbiddenException;
 import com.example.Capstone_project.common.exception.ResourceNotFoundException;
 import com.example.Capstone_project.domain.Feed;
+import com.example.Capstone_project.domain.FeedLike;
 import com.example.Capstone_project.domain.FittingStatus;
 import com.example.Capstone_project.domain.FittingTask;
 import com.example.Capstone_project.domain.User;
 import com.example.Capstone_project.dto.*;
+import com.example.Capstone_project.repository.FeedLikeRepository;
 import com.example.Capstone_project.repository.FeedRepository;
 import com.example.Capstone_project.repository.FittingRepository;
 import com.example.Capstone_project.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -22,6 +29,7 @@ import java.util.stream.Collectors;
 public class FeedService {
 
     private final FeedRepository feedRepository;
+    private final FeedLikeRepository feedLikeRepository;
     private final FittingRepository fittingRepository;
     private final UserRepository userRepository;
 
@@ -80,13 +88,10 @@ public class FeedService {
 
     @Transactional
     public void update(Long feedId, Long userId, FeedUpdateRequestDto dto) {
-        Feed feed = feedRepository.findById(feedId)
+        Feed feed = feedRepository.findByIdAndDeletedAtIsNull(feedId)
                 .orElseThrow(() -> new ResourceNotFoundException("피드를 찾을 수 없습니다. id=" + feedId));
         if (!feed.getUser().getId().equals(userId)) {
-            throw new ResourceNotFoundException("본인 피드만 수정할 수 있습니다.");
-        }
-        if (feed.getDeletedAt() != null) {
-            throw new ResourceNotFoundException("삭제된 피드는 수정할 수 없습니다.");
+            throw new ForbiddenException("본인 피드만 수정할 수 있습니다.");
         }
         if (dto.getFeedTitle() != null && !dto.getFeedTitle().isBlank()) {
             feed.setFeedTitle(dto.getFeedTitle());
@@ -99,33 +104,63 @@ public class FeedService {
 
     @Transactional
     public void delete(Long feedId, Long userId) {
-        Feed feed = feedRepository.findById(feedId)
+        Feed feed = feedRepository.findByIdAndDeletedAtIsNull(feedId)
                 .orElseThrow(() -> new ResourceNotFoundException("피드를 찾을 수 없습니다. id=" + feedId));
         if (!feed.getUser().getId().equals(userId)) {
-            throw new ResourceNotFoundException("본인 피드만 삭제할 수 있습니다.");
+            throw new ForbiddenException("본인 피드만 삭제할 수 있습니다.");
         }
         feed.setDeletedAt(LocalDateTime.now());
         feedRepository.save(feed);
     }
 
     @Transactional(readOnly = true)
-    public List<FeedListResponseDto> listAll() {
-        return feedRepository.findAllByDeletedAtIsNullOrderByCreatedAtDesc().stream()
-                .map(FeedListResponseDto::from)
-                .collect(Collectors.toList());
+    public Page<FeedListResponseDto> listAll(Long userId, int page, int size) {
+        Page<Feed> feeds = feedRepository.findAllByDeletedAtIsNullWithUser(PageRequest.of(page, size));
+        return enrichWithLikes(feeds, userId);
     }
 
     @Transactional(readOnly = true)
-    public List<FeedListResponseDto> listMy(Long userId) {
-        return feedRepository.findAllByUser_IdAndDeletedAtIsNullOrderByCreatedAtDesc(userId).stream()
-                .map(FeedListResponseDto::from)
-                .collect(Collectors.toList());
+    public Page<FeedListResponseDto> listMy(Long userId, int page, int size) {
+        Page<Feed> feeds = feedRepository.findAllByUserIdAndDeletedAtIsNullWithUser(userId, PageRequest.of(page, size));
+        return enrichWithLikes(feeds, userId);
     }
 
     @Transactional(readOnly = true)
-    public FeedDetailResponseDto getDetail(Long feedId) {
+    public FeedDetailResponseDto getDetail(Long feedId, Long userId) {
         Feed feed = feedRepository.findByIdAndDeletedAtIsNullWithUser(feedId)
                 .orElseThrow(() -> new ResourceNotFoundException("피드를 찾을 수 없습니다. id=" + feedId));
-        return FeedDetailResponseDto.from(feed);
+        long likeCount = feedLikeRepository.countByFeedId(feedId);
+        boolean isLiked = feedLikeRepository.findByFeedIdAndUserId(feedId, userId).isPresent();
+        FeedDetailResponseDto dto = FeedDetailResponseDto.from(feed);
+        dto.setLikeCount((int) likeCount);
+        dto.setLiked(isLiked);
+        return dto;
+    }
+
+    @Transactional
+    public boolean toggleLike(Long feedId, Long userId) {
+        feedRepository.findByIdAndDeletedAtIsNull(feedId)
+                .orElseThrow(() -> new ResourceNotFoundException("피드를 찾을 수 없습니다. id=" + feedId));
+        return feedLikeRepository.findByFeedIdAndUserId(feedId, userId)
+                .map(like -> { feedLikeRepository.delete(like); return false; })
+                .orElseGet(() -> { feedLikeRepository.save(new FeedLike(feedId, userId)); return true; });
+    }
+
+    private Page<FeedListResponseDto> enrichWithLikes(Page<Feed> feeds, Long userId) {
+        List<Long> feedIds = feeds.map(Feed::getId).getContent();
+        if (feedIds.isEmpty()) return feeds.map(FeedListResponseDto::from);
+
+        Map<Long, Long> likeCounts = feedLikeRepository.countByFeedIds(feedIds).stream()
+                .collect(Collectors.toMap(r -> (Long) r[0], r -> (Long) r[1]));
+        Set<Long> likedIds = userId != null
+                ? feedLikeRepository.findLikedFeedIds(feedIds, userId)
+                : Set.of();
+
+        return feeds.map(feed -> {
+            FeedListResponseDto dto = FeedListResponseDto.from(feed);
+            dto.setLikeCount(likeCounts.getOrDefault(feed.getId(), 0L).intValue());
+            dto.setLiked(likedIds.contains(feed.getId()));
+            return dto;
+        });
     }
 }
