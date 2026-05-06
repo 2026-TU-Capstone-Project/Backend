@@ -2,7 +2,10 @@ package com.example.Capstone_project.controller;
 
 import com.example.Capstone_project.common.dto.ApiResponse;
 import com.example.Capstone_project.config.CustomUserDetails;
+import com.example.Capstone_project.dto.UserPublicProfileResponseDto;
 import com.example.Capstone_project.dto.UserProfileResponseDto;
+import com.example.Capstone_project.dto.UserSearchResponseDto;
+import com.example.Capstone_project.service.FollowService;
 import com.example.Capstone_project.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -16,6 +19,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.util.List;
 
 @Tag(name = "User", description = "마이페이지 정보 추가/조회/수정")
 @RestController
@@ -24,6 +28,7 @@ import java.io.IOException;
 public class UserController {
 
     private final UserService userService;
+    private final FollowService followService;
 
     @Operation(summary = "마이페이지 조회", description = "로그인 사용자의 추가정보(닉네임, 프로필 이미지, 키, 몸무게, 성별)를 조회합니다.")
     @GetMapping("/me")
@@ -40,6 +45,8 @@ public class UserController {
     @PostMapping(value = "/me", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ApiResponse<UserProfileResponseDto>> createMyProfile(
             @AuthenticationPrincipal CustomUserDetails userDetails,
+            @Parameter(description = "계정 아이디 (영문/숫자/_, 3~30자)") @RequestParam(value = "username", required = false) String username,
+            @Parameter(description = "이름(닉네임)") @RequestParam(value = "nickname", required = false) String nickname,
             @Parameter(description = "키 (cm)") @RequestParam(value = "height", required = false) Float height,
             @Parameter(description = "몸무게 (kg)") @RequestParam(value = "weight", required = false) Float weight,
             @Parameter(description = "성별 (MALE, FEMALE)") @RequestParam(value = "gender", required = false) String gender,
@@ -60,7 +67,7 @@ public class UserController {
             }
         }
         UserProfileResponseDto created = userService.updateMyProfileWithForm(
-                userId, null, height, weight, gender, imageBytes, imageFilename, imageContentType
+                userId, username, nickname, height, weight, gender, imageBytes, imageFilename, imageContentType
         );
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success("프로필이 설정되었습니다.", created));
     }
@@ -72,7 +79,8 @@ public class UserController {
     @PatchMapping(value = "/me", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ApiResponse<UserProfileResponseDto>> updateMyProfile(
             @AuthenticationPrincipal CustomUserDetails userDetails,
-            @Parameter(description = "닉네임") @RequestParam(value = "nickname", required = false) String nickname,
+            @Parameter(description = "계정 아이디 (영문/숫자/_, 3~30자)") @RequestParam(value = "username", required = false) String username,
+            @Parameter(description = "이름(닉네임)") @RequestParam(value = "nickname", required = false) String nickname,
             @Parameter(description = "키 (cm)") @RequestParam(value = "height", required = false) Float height,
             @Parameter(description = "몸무게 (kg)") @RequestParam(value = "weight", required = false) Float weight,
             @Parameter(description = "성별 (MALE, FEMALE)") @RequestParam(value = "gender", required = false) String gender,
@@ -93,8 +101,30 @@ public class UserController {
             }
         }
         UserProfileResponseDto updated = userService.updateMyProfileWithForm(
-                userId, nickname, height, weight, gender, imageBytes, imageFilename, imageContentType
+                userId, username, nickname, height, weight, gender, imageBytes, imageFilename, imageContentType
         );
         return ResponseEntity.ok(ApiResponse.success("추가정보가 수정되었습니다.", updated));
+    }
+
+    @Operation(summary = "유저 검색", description = "계정 아이디(@username) 또는 이름으로 유저를 검색합니다. 최대 20명.")
+    @GetMapping("/search")
+    public ResponseEntity<ApiResponse<List<UserSearchResponseDto>>> searchUsers(
+            @Parameter(description = "검색어 (username 또는 이름)") @RequestParam String keyword,
+            @AuthenticationPrincipal CustomUserDetails userDetails
+    ) {
+        Long requesterId = userDetails != null ? userDetails.getUser().getId() : null;
+        List<UserSearchResponseDto> result = userService.searchUsers(keyword, requesterId);
+        return ResponseEntity.ok(ApiResponse.success("유저 검색 성공", result));
+    }
+
+    @Operation(summary = "다른 유저 공개 프로필 조회", description = "userId로 다른 유저의 공개 프로필, 팔로워/팔로잉 수, 나와의 관계를 조회합니다.")
+    @GetMapping("/{userId}")
+    public ResponseEntity<ApiResponse<UserPublicProfileResponseDto>> getPublicProfile(
+            @PathVariable Long userId,
+            @AuthenticationPrincipal CustomUserDetails userDetails
+    ) {
+        Long requesterId = userDetails != null ? userDetails.getUser().getId() : null;
+        UserPublicProfileResponseDto profile = followService.getPublicProfile(userId, requesterId);
+        return ResponseEntity.ok(ApiResponse.success("프로필 조회 성공", profile));
     }
 }
