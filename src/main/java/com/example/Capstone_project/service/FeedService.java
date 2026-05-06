@@ -164,7 +164,7 @@ public class FeedService {
                 : Set.of();
 
         Set<Long> favoritedIds = userId != null
-                ? feedFavoriteRepository.findAllByUser(userRepository.getReferenceById(userId)).stream()
+                ? feedFavoriteRepository.findAllByUserWithFeed(userRepository.getReferenceById(userId)).stream()
                 .map(f -> f.getFeed().getId())
                 .filter(feedIds::contains)
                 .collect(Collectors.toSet())
