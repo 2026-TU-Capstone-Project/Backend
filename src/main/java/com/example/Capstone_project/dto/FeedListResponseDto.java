@@ -30,6 +30,8 @@ public class FeedListResponseDto {
     private int likeCount;
     @Schema(description = "현재 사용자 좋아요 여부")
     private boolean isLiked;
+    @Schema(description = "현재 사용자 즐겨찾기 여부")
+    private boolean isFavorite;
     @Schema(description = "공개 범위")
     private String visibility;
 
@@ -43,6 +45,7 @@ public class FeedListResponseDto {
                 .authorProfileImageUrl(feed.getUser() != null ? feed.getUser().getProfileImageUrl() : null)
                 .likeCount(0)
                 .isLiked(false)
+                .isFavorite(false)
                 .visibility(feed.getVisibility() != null ? feed.getVisibility().name() : "PUBLIC")
                 .build();
     }

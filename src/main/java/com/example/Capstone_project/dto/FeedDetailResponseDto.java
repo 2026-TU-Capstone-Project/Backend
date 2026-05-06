@@ -46,6 +46,8 @@ public class FeedDetailResponseDto {
     private int likeCount;
     @Schema(description = "현재 사용자 좋아요 여부")
     private boolean isLiked;
+    @Schema(description = "현재 사용자 즐겨찾기 여부")
+    private boolean isFavorite;
 
     public static FeedDetailResponseDto from(Feed feed) {
         if (feed == null) return null;
