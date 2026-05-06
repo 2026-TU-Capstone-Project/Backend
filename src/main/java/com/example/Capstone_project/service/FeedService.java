@@ -12,6 +12,7 @@ import com.example.Capstone_project.repository.FeedLikeRepository;
 import com.example.Capstone_project.repository.FeedRepository;
 import com.example.Capstone_project.repository.FittingRepository;
 import com.example.Capstone_project.repository.UserRepository;
+import com.example.Capstone_project.repository.FeedFavoriteRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -32,6 +33,7 @@ public class FeedService {
     private final FeedLikeRepository feedLikeRepository;
     private final FittingRepository fittingRepository;
     private final UserRepository userRepository;
+    private final FeedFavoriteRepository feedFavoriteRepository;
 
     @Transactional(readOnly = true)
     public FeedPreviewResponseDto getPreview(Long fittingTaskId, Long userId) {
@@ -131,9 +133,14 @@ public class FeedService {
                 .orElseThrow(() -> new ResourceNotFoundException("피드를 찾을 수 없습니다. id=" + feedId));
         long likeCount = feedLikeRepository.countByFeedId(feedId);
         boolean isLiked = feedLikeRepository.findByFeedIdAndUserId(feedId, userId).isPresent();
+
+        User user = userRepository.getReferenceById(userId);
+        boolean isFavorite = feedFavoriteRepository.findByUserAndFeed(user, feed).isPresent();
+
         FeedDetailResponseDto dto = FeedDetailResponseDto.from(feed);
         dto.setLikeCount((int) likeCount);
         dto.setLiked(isLiked);
+        dto.setFavorite(isFavorite);
         return dto;
     }
 
@@ -156,10 +163,18 @@ public class FeedService {
                 ? feedLikeRepository.findLikedFeedIds(feedIds, userId)
                 : Set.of();
 
+        Set<Long> favoritedIds = userId != null
+                ? feedFavoriteRepository.findAllByUserWithFeed(userRepository.getReferenceById(userId)).stream()
+                .map(f -> f.getFeed().getId())
+                .filter(feedIds::contains)
+                .collect(Collectors.toSet())
+                : Set.of();
+
         return feeds.map(feed -> {
             FeedListResponseDto dto = FeedListResponseDto.from(feed);
             dto.setLikeCount(likeCounts.getOrDefault(feed.getId(), 0L).intValue());
             dto.setLiked(likedIds.contains(feed.getId()));
+            dto.setFavorite(favoritedIds.contains(feed.getId()));
             return dto;
         });
     }
