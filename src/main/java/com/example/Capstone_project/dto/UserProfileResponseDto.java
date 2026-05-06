@@ -21,7 +21,9 @@ public class UserProfileResponseDto {
     private Long userId;
     @Schema(description = "이메일")
     private String email;
-    @Schema(description = "닉네임")
+    @Schema(description = "계정 아이디 (@username)")
+    private String username;
+    @Schema(description = "이름(닉네임)")
     private String nickname;
     @Schema(description = "프로필 이미지 URL")
     private String profileImageUrl;
@@ -37,6 +39,7 @@ public class UserProfileResponseDto {
         return UserProfileResponseDto.builder()
                 .userId(user.getId())
                 .email(user.getEmail())
+                .username(user.getUsername())
                 .nickname(user.getNickname())
                 .profileImageUrl(user.getProfileImageUrl())
                 .height(user.getHeight())

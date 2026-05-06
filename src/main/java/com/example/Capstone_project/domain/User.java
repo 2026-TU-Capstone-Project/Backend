@@ -30,7 +30,10 @@ public class User {
     @Column(nullable = false, length = 100)
     private String password;
 
-    // nickname 추가
+    // 인스타그램처럼 고유한 계정 아이디 (영문/숫자/언더스코어, 최대 30자)
+    @Column(unique = true, length = 30)
+    private String username;
+
     @Column(nullable = true)
     private String nickname;
 

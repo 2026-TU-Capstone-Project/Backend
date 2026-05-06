@@ -4,13 +4,16 @@ import com.example.Capstone_project.common.exception.ForbiddenException;
 import com.example.Capstone_project.common.exception.ResourceNotFoundException;
 import com.example.Capstone_project.domain.Feed;
 import com.example.Capstone_project.domain.FeedLike;
+import com.example.Capstone_project.domain.FeedVisibility;
 import com.example.Capstone_project.domain.FittingStatus;
 import com.example.Capstone_project.domain.FittingTask;
+import com.example.Capstone_project.domain.FollowStatus;
 import com.example.Capstone_project.domain.User;
 import com.example.Capstone_project.dto.*;
 import com.example.Capstone_project.repository.FeedLikeRepository;
 import com.example.Capstone_project.repository.FeedRepository;
 import com.example.Capstone_project.repository.FittingRepository;
+import com.example.Capstone_project.repository.FollowRepository;
 import com.example.Capstone_project.repository.UserRepository;
 import com.example.Capstone_project.repository.FeedFavoriteRepository;
 import lombok.RequiredArgsConstructor;
@@ -34,6 +37,7 @@ public class FeedService {
     private final FittingRepository fittingRepository;
     private final UserRepository userRepository;
     private final FeedFavoriteRepository feedFavoriteRepository;
+    private final FollowRepository followRepository;
 
     @Transactional(readOnly = true)
     public FeedPreviewResponseDto getPreview(Long fittingTaskId, Long userId) {
@@ -117,7 +121,10 @@ public class FeedService {
 
     @Transactional(readOnly = true)
     public Page<FeedListResponseDto> listAll(Long userId, int page, int size) {
-        Page<Feed> feeds = feedRepository.findAllByDeletedAtIsNullWithUser(PageRequest.of(page, size));
+        PageRequest pageable = PageRequest.of(page, size);
+        Page<Feed> feeds = userId != null
+                ? feedRepository.findFeedsVisibleToUser(userId, pageable)
+                : feedRepository.findPublicFeedsWithUser(pageable);
         return enrichWithLikes(feeds, userId);
     }
 
@@ -131,8 +138,23 @@ public class FeedService {
     public FeedDetailResponseDto getDetail(Long feedId, Long userId) {
         Feed feed = feedRepository.findByIdAndDeletedAtIsNullWithUser(feedId)
                 .orElseThrow(() -> new ResourceNotFoundException("피드를 찾을 수 없습니다. id=" + feedId));
+
+        // FOLLOWERS_ONLY 피드는 작성자 본인 또는 수락된 팔로워만 조회 가능
+        if (feed.getVisibility() == FeedVisibility.FOLLOWERS_ONLY) {
+            Long authorId = feed.getUser().getId();
+            boolean canView = userId != null && (
+                    userId.equals(authorId) ||
+                    followRepository.findByFollowerIdAndFollowingId(userId, authorId)
+                            .map(f -> f.getStatus() == FollowStatus.ACCEPTED)
+                            .orElse(false)
+            );
+            if (!canView) {
+                throw new ForbiddenException("팔로워만 볼 수 있는 피드입니다.");
+            }
+        }
+
         long likeCount = feedLikeRepository.countByFeedId(feedId);
-        boolean isLiked = feedLikeRepository.findByFeedIdAndUserId(feedId, userId).isPresent();
+        boolean isLiked = userId != null && feedLikeRepository.findByFeedIdAndUserId(feedId, userId).isPresent();
 
         User user = userRepository.getReferenceById(userId);
         boolean isFavorite = feedFavoriteRepository.findByUserAndFeed(user, feed).isPresent();
