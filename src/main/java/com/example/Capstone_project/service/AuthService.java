@@ -5,6 +5,7 @@ import com.example.Capstone_project.dto.LoginDto;
 import com.example.Capstone_project.dto.SignupDto;
 import com.example.Capstone_project.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,7 +36,13 @@ public class AuthService {
         if (signupDto.getGender() != null) {
             user.setGender(signupDto.getGender());
         }
-        userRepository.save(user);
+
+        try {
+            userRepository.save(user);
+        } catch (DataIntegrityViolationException e) {
+            // existsByEmail() 통과 후 동시 요청이 먼저 INSERT한 경우 DB unique 제약 위반 처리
+            return "이미 존재하는 이메일입니다.";
+        }
 
         return "회원가입 성공";
     }

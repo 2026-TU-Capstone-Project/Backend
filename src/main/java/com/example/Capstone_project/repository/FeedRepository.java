@@ -59,4 +59,8 @@ public interface FeedRepository extends JpaRepository<Feed, Long> {
     Optional<Feed> findByIdAndDeletedAtIsNullWithUser(@Param("id") Long id);
 
     Optional<Feed> findByIdAndDeletedAtIsNull(Long id);
+
+    // 스케줄러용: 삭제되지 않은 피드에서 해당 clothesId를 topClothesId 또는 bottomClothesId로 참조하는지 확인
+    @Query("SELECT COUNT(f) > 0 FROM Feed f WHERE f.deletedAt IS NULL AND (f.topClothesId = :clothesId OR f.bottomClothesId = :clothesId)")
+    boolean existsActiveFeedReferencingClothes(@Param("clothesId") Long clothesId);
 }

@@ -26,6 +26,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -239,11 +241,21 @@ public class ClothesController {
 
         fittingRepository.clearTopIdByClothesId(id);
         fittingRepository.clearBottomIdByClothesId(id);
-
-        String blobName = gcsService.extractBlobNameFromUrl(clothes.getImgUrl());
-        gcsService.deleteImage(blobName);
-
         clothesRepository.delete(clothes);
+
+        // GCS 삭제는 DB 커밋 성공 후에만 실행 — 커밋 전 실패 시 GCS 파일이 남는 문제 방지
+        final String blobName = gcsService.extractBlobNameFromUrl(clothes.getImgUrl());
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                try {
+                    gcsService.deleteImage(blobName);
+                } catch (Exception e) {
+                    log.warn("GCS 이미지 삭제 실패 (DB는 이미 커밋됨): {}", blobName, e);
+                }
+            }
+        });
+
         return ResponseEntity.ok(ApiResponse.success("옷 삭제 완료", null));
     }
 }
