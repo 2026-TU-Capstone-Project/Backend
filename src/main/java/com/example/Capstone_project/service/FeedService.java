@@ -10,6 +10,7 @@ import com.example.Capstone_project.domain.FittingTask;
 import com.example.Capstone_project.domain.FollowStatus;
 import com.example.Capstone_project.domain.User;
 import com.example.Capstone_project.dto.*;
+import com.example.Capstone_project.repository.ClothesBookmarkRepository;
 import com.example.Capstone_project.repository.FeedLikeRepository;
 import com.example.Capstone_project.repository.FeedRepository;
 import com.example.Capstone_project.repository.FittingRepository;
@@ -38,6 +39,7 @@ public class FeedService {
     private final UserRepository userRepository;
     private final FeedFavoriteRepository feedFavoriteRepository;
     private final FollowRepository followRepository;
+    private final ClothesBookmarkRepository clothesBookmarkRepository;
 
     @Transactional(readOnly = true)
     public FeedPreviewResponseDto getPreview(Long fittingTaskId, Long userId) {
@@ -115,6 +117,7 @@ public class FeedService {
         if (!feed.getUser().getId().equals(userId)) {
             throw new ForbiddenException("본인 피드만 삭제할 수 있습니다.");
         }
+        clothesBookmarkRepository.deleteAllByFeedId(feedId);
         feed.setDeletedAt(LocalDateTime.now());
         feedRepository.save(feed);
     }
@@ -155,7 +158,6 @@ public class FeedService {
 
         long likeCount = feedLikeRepository.countByFeedId(feedId);
         boolean isLiked = userId != null && feedLikeRepository.findByFeedIdAndUserId(feedId, userId).isPresent();
-
         User user = userRepository.getReferenceById(userId);
         boolean isFavorite = feedFavoriteRepository.findByUserAndFeed(user, feed).isPresent();
 
