@@ -34,7 +34,6 @@ public class FittingService {
     private final FittingRepository fittingRepository;
     private final ClothesRepository clothesRepository;
     private final GoogleCloudStorageService gcsService;
-    private final FittingCleanupService fittingCleanupService;
     private final VirtualFittingSseService virtualFittingSseService;
     @Qualifier("taskExecutor")
     private final Executor taskExecutor;
@@ -156,7 +155,7 @@ public class FittingService {
 
     @Transactional(readOnly = true)
     public FittingTask checkStatus(Long id) {
-        return fittingRepository.findById(id).orElse(null);
+        return fittingRepository.findActiveById(id).orElse(null);
     }
 
     @Transactional
@@ -459,6 +458,17 @@ public class FittingService {
         fittingRepository.save(task);
     }
 
+    @Transactional
+    public boolean markAsSaved(Long taskId) {
+        return fittingRepository.findActiveById(taskId)
+                .map(task -> {
+                    task.setSaved(true);
+                    fittingRepository.save(task);
+                    return true;
+                })
+                .orElse(false);
+    }
+
     /**
      * 가상 피팅 결과 삭제 (닫기 시 호출). 본인 소유 task만 삭제 가능.
      * FittingTask는 즉시 삭제 후 반환. GCS/Clothes 정리는 비동기로 백그라운드 처리.
@@ -466,20 +476,14 @@ public class FittingService {
      */
     @Transactional
     public boolean deleteTask(Long taskId, Long userId) {
-        FittingTask task = fittingRepository.findById(taskId).orElse(null);
+        FittingTask task = fittingRepository.findActiveById(taskId).orElse(null);
         if (task == null || !task.getUserId().equals(userId)) {
             return false;
         }
-        Long topId = task.getTopId();
-        Long bottomId = task.getBottomId();
-        String bodyImgUrl = task.getBodyImgUrl();
-        String resultImgUrl = task.getResultImgUrl();
-        boolean taskWasSaved = task.isSaved();
-
-        fittingRepository.delete(task);
-        log.info("🗑️ FittingTask 삭제 완료 - taskId: {}, userId: {} (GCS/Clothes 정리는 비동기 처리)", taskId, userId);
-
-        fittingCleanupService.cleanupAfterTaskDelete(bodyImgUrl, resultImgUrl, topId, bottomId, taskWasSaved);
+        task.setDeletedAt(java.time.LocalDateTime.now());
+        task.setSaved(false);
+        fittingRepository.save(task);
+        log.info("FittingTask soft delete 완료 - taskId: {}, userId: {} (GCS/Clothes 정리는 스케줄러가 처리)", taskId, userId);
         return true;
     }
 

@@ -41,7 +41,8 @@ public class ClothesSet {
     private List<Clothes> clothes = new ArrayList<>();
 
     // 이 세트로 만든 피팅 결과물들
-    @OneToMany(mappedBy = "clothesSet", cascade = CascadeType.ALL)
+    // DELETE cascade 제거: ClothesSet 삭제 시 FittingTask는 서비스 레이어에서 명시적으로 soft delete 처리
+    @OneToMany(mappedBy = "clothesSet", cascade = {CascadeType.PERSIST, CascadeType.MERGE})
     @Builder.Default
-    private List<FittingTask> fittingTasks = new ArrayList<>(); 
+    private List<FittingTask> fittingTasks = new ArrayList<>();
 }
