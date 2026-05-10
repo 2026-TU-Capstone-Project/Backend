@@ -98,8 +98,12 @@ public class FittingTask {
     private ClothesSet clothesSet;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "fit_type", length = 20)
-    private FitType fitType; // 슬림핏, 레귤러핏, 오버핏
+    @Column(name = "top_fit_type", length = 20)
+    private FitType topFitType; // 상의 핏 타입 (슬림핏, 레귤러핏, 오버핏)
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "bottom_fit_type", length = 20)
+    private FitType bottomFitType; // 하의 핏 타입 (슬림핏, 레귤러핏, 오버핏)
 
     // 생성자 (주문 들어왔을 때)
     public FittingTask(FittingStatus status) {

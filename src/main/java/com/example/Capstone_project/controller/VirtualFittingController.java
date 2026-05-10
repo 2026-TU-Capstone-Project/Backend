@@ -62,7 +62,8 @@ public class VirtualFittingController {
             @Parameter(description = "전신 사진 (착용할 사람)", required = true) @RequestParam("user_image") MultipartFile userImage,
             @Parameter(description = "상의 이미지", required = true) @RequestParam("top_image") MultipartFile topImage,
             @Parameter(description = "하의 이미지 (선택)") @RequestParam(value = "bottom_image", required = false) MultipartFile bottomImage,
-            @Parameter(description = "핏 타입 (SLIM_FIT, REGULAR_FIT, OVERSIZED_FIT). 기본값: REGULAR_FIT") @RequestParam(value = "fit_type", required = false, defaultValue = "REGULAR_FIT") FitType fitType,
+            @Parameter(description = "상의 핏 타입 (SLIM_FIT, REGULAR_FIT, OVERSIZED_FIT). 기본값: REGULAR_FIT") @RequestParam(value = "top_fit_type", required = false, defaultValue = "REGULAR_FIT") FitType topFitType,
+            @Parameter(description = "하의 핏 타입 (SLIM_FIT, REGULAR_FIT, OVERSIZED_FIT). 기본값: REGULAR_FIT") @RequestParam(value = "bottom_fit_type", required = false, defaultValue = "REGULAR_FIT") FitType bottomFitType,
             @AuthenticationPrincipal CustomUserDetails userDetails
     ) {
         if (userImage.isEmpty() || topImage.isEmpty()) {
@@ -87,8 +88,9 @@ public class VirtualFittingController {
             final String bottomImageFilename = (bottomImage != null) ? bottomImage.getOriginalFilename() : null;
 
             final User user = userDetails.getUser();
-            final FitType finalFitType = fitType;
-            final FittingTask task = fittingService.createFittingTask(user.getId(), null, fitType);
+            final FitType finalTopFitType = topFitType;
+            final FitType finalBottomFitType = bottomFitType;
+            final FittingTask task = fittingService.createFittingTask(user.getId(), null, topFitType, bottomFitType);
 
             CompletableFuture.runAsync(() -> {
                 String userImageFilename = userImage.getOriginalFilename();
@@ -103,7 +105,8 @@ public class VirtualFittingController {
                             bottomImageFilename,
                             clothesAnalysisService,
                             user,
-                            finalFitType
+                            finalTopFitType,
+                            finalBottomFitType
                     );
 
                 } catch (Exception e) {
@@ -249,6 +252,57 @@ public class VirtualFittingController {
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(ApiResponse.error("Status retrieval failed: " + e.getMessage()));
+        }
+    }
+
+    @Operation(
+            summary = "스타일 사진 기반 가상 피팅",
+            description = "전신 사진 + 스타일 참고 사진을 업로드하면, 스타일 사진의 의상을 전신 사진 인물에게 그대로 입혀 가상 피팅 결과를 생성합니다. 비동기 처리 → 즉시 202 + taskId 반환."
+    )
+    @PostMapping(value = "/style-photo", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<ApiResponse<VirtualFittingTaskIdResponse>> createStylePhotoFitting(
+            @Parameter(description = "전신 사진 (착용할 사람)", required = true) @RequestParam("user_image") MultipartFile userImage,
+            @Parameter(description = "스타일 참고 사진 (입힐 의상 기준)", required = true) @RequestParam("style_image") MultipartFile styleImage,
+            @AuthenticationPrincipal CustomUserDetails userDetails
+    ) {
+        if (userImage.isEmpty() || styleImage.isEmpty()) {
+            return ResponseEntity.badRequest().body(ApiResponse.error("전신 사진과 스타일 사진은 필수입니다."));
+        }
+
+        final Long userId = userDetails.getUser().getId();
+        final String lockKey = "lock:fitting-create:" + userId;
+
+        if (!RedisLockService.tryLock(lockKey, Duration.ofSeconds(30))) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(ApiResponse.error("이미 가상 피팅 요청이 처리 중입니다. 잠시 후 다시 시도해주세요."));
+        }
+
+        try {
+            final byte[] userImageBytes = userImage.getBytes();
+            final String userImageFilename = userImage.getOriginalFilename();
+            final byte[] styleImageBytes = styleImage.getBytes();
+
+            final FittingTask task = fittingService.createFittingTask(userId, null, null, null);
+
+            CompletableFuture.runAsync(() -> {
+                try {
+                    fittingService.processStylePhotoFitting(
+                            task.getId(),
+                            userImageBytes,
+                            userImageFilename,
+                            styleImageBytes
+                    );
+                } catch (Exception e) {
+                    log.error("스타일 사진 피팅 비동기 오류", e);
+                }
+            }, taskExecutor);
+
+            return ResponseEntity.status(HttpStatus.ACCEPTED)
+                    .body(ApiResponse.success("스타일 사진 피팅 요청 성공", new VirtualFittingTaskIdResponse(task.getId())));
+
+        } catch (IOException e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("파일 읽기 실패: " + e.getMessage()));
         }
     }
 

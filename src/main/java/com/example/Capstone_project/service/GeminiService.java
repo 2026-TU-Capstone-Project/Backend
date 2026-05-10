@@ -463,6 +463,88 @@ public class GeminiService {
 	}
 
 	/**
+	 * 스타일 사진 기반 가상 피팅
+	 * 첫 번째 이미지(사람)에게 두 번째 이미지(스타일 사진)의 의상을 그대로 입힘
+	 */
+	public VirtualFittingResponse processVirtualFittingWithStylePhoto(byte[] userImageBytes, byte[] styleImageBytes) {
+		try {
+			byte[] resUser = resizeImageIfNeeded(userImageBytes);
+			byte[] resStyle = resizeImageIfNeeded(styleImageBytes);
+
+			String prompt = """
+					The FIRST image is the person (the body to dress).
+					The SECOND image is the style reference (the outfit to copy).
+
+					Your task: dress the person from the FIRST image in the outfit shown in the SECOND image.
+
+					STRICT RULES:
+					- Keep the FIRST image person's original pose, position, and body angle exactly as-is. Do NOT change the pose.
+					- Keep the FIRST image person's face, hairstyle, skin, and body shape exactly as-is.
+					- Do NOT copy the pose or body position from the SECOND image.
+					- Only extract the clothing and accessories from the SECOND image and apply them onto the person in the FIRST image.
+					- Do NOT put the outfit from the FIRST image onto the SECOND image.
+					- The result should look like the FIRST image person wearing the SECOND image outfit, in their original pose.
+					""";
+
+			Map<String, Object> request = new HashMap<>();
+			List<Map<String, Object>> contents = new ArrayList<>();
+			Map<String, Object> content = new HashMap<>();
+			List<Map<String, Object>> parts = new ArrayList<>();
+
+			addInlineData(parts, Base64.getEncoder().encodeToString(resUser));
+			addInlineData(parts, Base64.getEncoder().encodeToString(resStyle));
+
+			Map<String, Object> textPart = new HashMap<>();
+			textPart.put("text", prompt);
+			parts.add(textPart);
+
+			content.put("parts", parts);
+			contents.add(content);
+			request.put("contents", contents);
+
+			Map<String, Object> generationConfig = new HashMap<>();
+			Map<String, Object> imageConfig = new HashMap<>();
+			imageConfig.put("image_size", defaultResolution);
+			imageConfig.put("aspect_ratio", defaultAspectRatio);
+			generationConfig.put("image_config", imageConfig);
+			generationConfig.put("response_modalities", List.of("IMAGE", "TEXT"));
+			request.put("generationConfig", generationConfig);
+
+			String endpoint = "/models/" + model + ":generateContent";
+			String responseString = callGeminiWithRetry(endpoint, request);
+
+			GeminiGenerateContentResponse responseObj = objectMapper.readValue(responseString, GeminiGenerateContentResponse.class);
+			GeminiGenerateContentResponse.Candidate candidate = responseObj.getCandidates().get(0);
+			String imageBase64 = null;
+			String mimeType = null;
+
+			for (GeminiGenerateContentResponse.Part part : candidate.getContent().getParts()) {
+				if (part.getInlineData() != null) {
+					imageBase64 = part.getInlineData().getData();
+					mimeType = part.getInlineData().getMimeType();
+					break;
+				}
+			}
+
+			if (imageBase64 == null) throw new BadRequestException("No image data in Gemini API response");
+
+			String imageUrl = saveBase64ImageToFile(imageBase64, mimeType);
+			String imageId = "gemini-style-" + System.currentTimeMillis();
+
+			log.info("스타일 사진 피팅 완료 - imageUrl: {}", imageUrl);
+			return VirtualFittingResponse.builder()
+					.imageId(imageId)
+					.status("completed")
+					.imageUrl(imageUrl)
+					.build();
+
+		} catch (Exception e) {
+			log.error("스타일 사진 피팅 오류: {}", e.getMessage());
+			throw new RuntimeException("스타일 사진 피팅 실패: " + e.getMessage());
+		}
+	}
+
+	/**
 	 * Gemini API 호출 + 429 Rate Limit 시 자동 재시도 (최대 MAX_RETRIES회, 지수 백오프).
 	 * 옷 분석과 가상 피팅이 동시에 실행되면서 429가 발생할 수 있어 재시도로 처리.
 	 */

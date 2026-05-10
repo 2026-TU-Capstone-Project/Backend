@@ -44,15 +44,16 @@ public class FittingService {
 
     @Transactional
     public FittingTask createFittingTask(Long userId, String bodyImgUrl) {
-        return createFittingTask(userId, bodyImgUrl, null);
+        return createFittingTask(userId, bodyImgUrl, null, null);
     }
 
     @Transactional
-    public FittingTask createFittingTask(Long userId, String bodyImgUrl, FitType fitType) {
+    public FittingTask createFittingTask(Long userId, String bodyImgUrl, FitType topFitType, FitType bottomFitType) {
         FittingTask task = new FittingTask(FittingStatus.WAITING);
         task.setUserId(userId);
         task.setBodyImgUrl(bodyImgUrl);
-        task.setFitType(fitType);
+        task.setTopFitType(topFitType);
+        task.setBottomFitType(bottomFitType);
         return fittingRepository.save(task);
     }
 
@@ -66,23 +67,23 @@ public class FittingService {
     }
 
     public void processFitting(Long taskId, byte[] userImgData, String userImageFilename, byte[] topImgData, byte[] bottomImgData) {
-        processFitting(taskId, userImgData, userImageFilename, topImgData, bottomImgData, System.currentTimeMillis(), null);
+        processFitting(taskId, userImgData, userImageFilename, topImgData, bottomImgData, System.currentTimeMillis(), null, null);
     }
 
     public void processFitting(Long taskId, byte[] userImgData, String userImageFilename, byte[] topImgData, byte[] bottomImgData, long processStartTime) {
-        processFitting(taskId, userImgData, userImageFilename, topImgData, bottomImgData, processStartTime, null);
+        processFitting(taskId, userImgData, userImageFilename, topImgData, bottomImgData, processStartTime, null, null);
     }
 
-    public void processFitting(Long taskId, byte[] userImgData, String userImageFilename, byte[] topImgData, byte[] bottomImgData, long processStartTime, FitType fitType) {
+    public void processFitting(Long taskId, byte[] userImgData, String userImageFilename, byte[] topImgData, byte[] bottomImgData, long processStartTime, FitType topFitType, FitType bottomFitType) {
         long startTime = System.currentTimeMillis();
-        log.info("🚀 가상 피팅 작업 시작 - Task ID: {}, fitType: {}", taskId, fitType);
+        log.info("🚀 가상 피팅 작업 시작 - Task ID: {}, topFitType: {}, bottomFitType: {}", taskId, topFitType, bottomFitType);
 
         try {
             // 1) 상태를 PROCESSING으로 먼저 변경 (짧은 트랜잭션)
             updateTaskStatus(taskId, FittingStatus.PROCESSING);
 
             // 2) 가장 오래 걸리는 Gemini 가상 피팅 호출
-            String prompt = buildPromptWithFitType(fitType);
+            String prompt = buildPromptWithFitTypes(topFitType, bottomFitType);
             VirtualFittingResponse response = geminiService.processVirtualFitting(
                     userImgData,
                     topImgData,
@@ -233,10 +234,11 @@ public class FittingService {
             String bottomImageFilename,
             ClothesAnalysisService clothesAnalysisService,
             User user,
-            FitType fitType
+            FitType topFitType,
+            FitType bottomFitType
     ) {
         long processStartTime = System.currentTimeMillis();
-        log.info("🚀 [비동기] 가상 피팅 전체 프로세스 시작 - Task ID: {}, fitType: {}", taskId, fitType);
+        log.info("🚀 [비동기] 가상 피팅 전체 프로세스 시작 - Task ID: {}, topFitType: {}, bottomFitType: {}", taskId, topFitType, bottomFitType);
 
         try {
             if (topImageBytes == null && bottomImageBytes == null) {
@@ -248,7 +250,7 @@ public class FittingService {
             // === 1. 가상 피팅을 먼저 시작 (가장 오래 걸리는 작업) ===
             final long pStart = processStartTime;
             final CompletableFuture<Void> fittingFuture = CompletableFuture.runAsync(() -> {
-                processFitting(taskId, userImageBytes, userImageFilename, topImageBytes, bottomImageBytes, pStart, fitType);
+                processFitting(taskId, userImageBytes, userImageFilename, topImageBytes, bottomImageBytes, pStart, topFitType, bottomFitType);
             }, taskExecutor);
 
             // === 2. 2초 후 옷 분석 시작 (Rate Limit 회피, 동시 2개씩만 Gemini 호출) ===
@@ -361,15 +363,95 @@ public class FittingService {
         return result;
     }
 
-    private String buildPromptWithFitType(FitType fitType) {
-        if (fitType == null) return null;
+    private String buildPromptWithFitTypes(FitType topFitType, FitType bottomFitType) {
+        if (topFitType == null && bottomFitType == null) return null;
         String base = "Put the provided top and bottom garments on the person in the full-body photo.";
-        String fitDesc = switch (fitType) {
-            case SLIM_FIT -> " Show the garment as a slim fit — fitting closely to the body with a tailored, tight silhouette.";
-            case REGULAR_FIT -> " Show the garment as a regular fit — standard comfortable silhouette, not too tight or too loose.";
-            case OVERSIZED_FIT -> " Show the garment as an oversized fit — loose and relaxed, hanging away from the body.";
-        };
-        return base + fitDesc;
+        StringBuilder sb = new StringBuilder(base);
+        if (topFitType != null) {
+            String topDesc = switch (topFitType) {
+                case SLIM_FIT -> " Show the top garment as a slim fit — fitting closely to the body with a tailored, tight silhouette.";
+                case REGULAR_FIT -> " Show the top garment as a regular fit — standard comfortable silhouette, not too tight or too loose.";
+                case OVERSIZED_FIT -> " Show the top garment as an oversized fit — loose and relaxed, hanging away from the body.";
+            };
+            sb.append(topDesc);
+        }
+        if (bottomFitType != null) {
+            String bottomDesc = switch (bottomFitType) {
+                case SLIM_FIT -> " Show the bottom garment as a slim fit — form-fitting and close to the legs.";
+                case REGULAR_FIT -> " Show the bottom garment as a regular fit — standard comfortable silhouette, not too tight or too loose.";
+                case OVERSIZED_FIT -> " Show the bottom garment as an oversized fit — baggy and loose around the legs.";
+            };
+            sb.append(bottomDesc);
+        }
+        return sb.toString();
+    }
+
+    /**
+     * 스타일 사진 기반 가상 피팅 처리 (비동기)
+     * 상의/하의 분리 없이 스타일 사진 전체를 기준으로 피팅
+     */
+    @Async("taskExecutor")
+    public void processStylePhotoFitting(
+            Long taskId,
+            byte[] userImageBytes,
+            String userImageFilename,
+            byte[] styleImageBytes
+    ) {
+        long processStartTime = System.currentTimeMillis();
+        log.info("🎨 [비동기] 스타일 사진 피팅 시작 - Task ID: {}", taskId);
+
+        try {
+            updateTaskStatus(taskId, FittingStatus.PROCESSING);
+
+            VirtualFittingResponse response = geminiService.processVirtualFittingWithStylePhoto(userImageBytes, styleImageBytes);
+
+            if (response != null && "completed".equals(response.getStatus())) {
+                updateFittingTaskResult(taskId, response.getImageUrl());
+                log.info("✅ 스타일 사진 피팅 완료 - Task ID: {}, URL: {}", taskId, response.getImageUrl());
+
+                // 전신 사진 GCS 업로드 (후처리)
+                String bodyImgUrl = null;
+                try {
+                    String filename = (userImageFilename != null && !userImageFilename.isEmpty())
+                            ? userImageFilename
+                            : java.util.UUID.randomUUID().toString() + ".jpg";
+                    bodyImgUrl = gcsService.uploadUserBodyImage(userImageBytes, filename, "image/jpeg");
+                } catch (Exception e) {
+                    log.error("❌ 전신 사진 GCS 업로드 실패 - Task ID: {}", taskId, e);
+                }
+
+                // 스타일 분석 (후처리)
+                StyleAnalysisResult styleResult = null;
+                try {
+                    styleResult = analyzeVirtualFittingResultImage(response.getImageUrl());
+                } catch (Exception e) {
+                    log.error("❌ 스타일 분석 실패 - Task ID: {}", taskId, e);
+                }
+
+                if (bodyImgUrl != null || styleResult != null) {
+                    float[] styleEmbedding = null;
+                    String styleAnalysis = styleResult != null ? styleResult.getStyleAnalysis() : null;
+                    if (styleAnalysis != null) {
+                        try {
+                            styleEmbedding = geminiService.embedText(styleAnalysis, "RETRIEVAL_DOCUMENT");
+                        } catch (Exception e) {
+                            log.warn("❌ 스타일 임베딩 생성 실패 - Task ID: {}", taskId);
+                        }
+                    }
+                    updateFittingTaskStyleAndBody(taskId, bodyImgUrl, styleAnalysis, styleEmbedding,
+                            styleResult != null ? styleResult.getResultGender() : null);
+                }
+
+                long elapsed = System.currentTimeMillis() - processStartTime;
+                log.info("🏁 스타일 사진 피팅 전체 완료 - Task ID: {}, 소요: {}초", taskId, String.format("%.1f", elapsed / 1000.0));
+            } else {
+                log.error("❌ 스타일 사진 피팅 실패 - Task ID: {}", taskId);
+                updateTaskStatus(taskId, FittingStatus.FAILED);
+            }
+        } catch (Exception e) {
+            log.error("❌ 스타일 사진 피팅 처리 오류 - Task ID: {}: {}", taskId, e.getMessage(), e);
+            updateTaskStatus(taskId, FittingStatus.FAILED);
+        }
     }
 
     @Transactional
