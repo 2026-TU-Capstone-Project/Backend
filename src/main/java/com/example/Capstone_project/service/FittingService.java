@@ -386,6 +386,74 @@ public class FittingService {
         return sb.toString();
     }
 
+    /**
+     * 스타일 사진 기반 가상 피팅 처리 (비동기)
+     * 상의/하의 분리 없이 스타일 사진 전체를 기준으로 피팅
+     */
+    @Async("taskExecutor")
+    public void processStylePhotoFitting(
+            Long taskId,
+            byte[] userImageBytes,
+            String userImageFilename,
+            byte[] styleImageBytes
+    ) {
+        long processStartTime = System.currentTimeMillis();
+        log.info("🎨 [비동기] 스타일 사진 피팅 시작 - Task ID: {}", taskId);
+
+        try {
+            updateTaskStatus(taskId, FittingStatus.PROCESSING);
+
+            VirtualFittingResponse response = geminiService.processVirtualFittingWithStylePhoto(userImageBytes, styleImageBytes);
+
+            if (response != null && "completed".equals(response.getStatus())) {
+                updateFittingTaskResult(taskId, response.getImageUrl());
+                log.info("✅ 스타일 사진 피팅 완료 - Task ID: {}, URL: {}", taskId, response.getImageUrl());
+
+                // 전신 사진 GCS 업로드 (후처리)
+                String bodyImgUrl = null;
+                try {
+                    String filename = (userImageFilename != null && !userImageFilename.isEmpty())
+                            ? userImageFilename
+                            : java.util.UUID.randomUUID().toString() + ".jpg";
+                    bodyImgUrl = gcsService.uploadUserBodyImage(userImageBytes, filename, "image/jpeg");
+                } catch (Exception e) {
+                    log.error("❌ 전신 사진 GCS 업로드 실패 - Task ID: {}", taskId, e);
+                }
+
+                // 스타일 분석 (후처리)
+                StyleAnalysisResult styleResult = null;
+                try {
+                    styleResult = analyzeVirtualFittingResultImage(response.getImageUrl());
+                } catch (Exception e) {
+                    log.error("❌ 스타일 분석 실패 - Task ID: {}", taskId, e);
+                }
+
+                if (bodyImgUrl != null || styleResult != null) {
+                    float[] styleEmbedding = null;
+                    String styleAnalysis = styleResult != null ? styleResult.getStyleAnalysis() : null;
+                    if (styleAnalysis != null) {
+                        try {
+                            styleEmbedding = geminiService.embedText(styleAnalysis, "RETRIEVAL_DOCUMENT");
+                        } catch (Exception e) {
+                            log.warn("❌ 스타일 임베딩 생성 실패 - Task ID: {}", taskId);
+                        }
+                    }
+                    updateFittingTaskStyleAndBody(taskId, bodyImgUrl, styleAnalysis, styleEmbedding,
+                            styleResult != null ? styleResult.getResultGender() : null);
+                }
+
+                long elapsed = System.currentTimeMillis() - processStartTime;
+                log.info("🏁 스타일 사진 피팅 전체 완료 - Task ID: {}, 소요: {}초", taskId, String.format("%.1f", elapsed / 1000.0));
+            } else {
+                log.error("❌ 스타일 사진 피팅 실패 - Task ID: {}", taskId);
+                updateTaskStatus(taskId, FittingStatus.FAILED);
+            }
+        } catch (Exception e) {
+            log.error("❌ 스타일 사진 피팅 처리 오류 - Task ID: {}: {}", taskId, e.getMessage(), e);
+            updateTaskStatus(taskId, FittingStatus.FAILED);
+        }
+    }
+
     @Transactional
     public void saveTask(FittingTask task) {
         fittingRepository.save(task);
