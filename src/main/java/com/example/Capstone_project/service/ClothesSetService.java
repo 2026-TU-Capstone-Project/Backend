@@ -13,6 +13,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Service
@@ -62,6 +63,7 @@ public class ClothesSetService {
 
         fittingTask.setClothesSet(savedSet);
         fittingTask.setSaved(true);
+        fittingRepository.save(fittingTask);
 
         return savedSet;
     }
@@ -100,20 +102,17 @@ public class ClothesSetService {
      */
     @Transactional
     public void deleteFittingFromSet(Long fittingTaskId, User user) {
-        // 1. 삭제할 착장 찾기
-        FittingTask task = fittingRepository.findById(fittingTaskId)
+        FittingTask task = fittingRepository.findActiveById(fittingTaskId)
                 .orElseThrow(() -> new RuntimeException("해당 착장을 찾을 수 없습니다."));
 
-        // 2. 권한 확인
         if (!task.getUser().getId().equals(user.getId())) {
             throw new RuntimeException("삭제 권한이 없습니다.");
         }
 
-        // 3. 폴더와의 연결 고리 끊기
         task.setClothesSet(null);
-
-        // 4. 착장 데이터 삭제
-        fittingRepository.delete(task);
+        task.setSaved(false);
+        task.setDeletedAt(LocalDateTime.now());
+        fittingRepository.save(task);
     }
 
 
@@ -125,15 +124,18 @@ public class ClothesSetService {
         ClothesSet clothesSet = clothesSetRepository.findById(setId)
                 .orElseThrow(() -> new RuntimeException("세트를 찾을 수 없습니다."));
 
-        // 권한 확인
         if (!clothesSet.getUser().getId().equals(user.getId())) {
             throw new RuntimeException("삭제 권한이 없습니다.");
         }
 
+        // cascade DELETE 대신 명시적 soft delete — GCS/Clothes 정리는 스케줄러가 처리
+        LocalDateTime now = LocalDateTime.now();
         if (clothesSet.getFittingTasks() != null) {
             for (FittingTask task : clothesSet.getFittingTasks()) {
                 task.setClothesSet(null);
                 task.setSaved(false);
+                task.setDeletedAt(now);
+                fittingRepository.save(task);
             }
         }
 

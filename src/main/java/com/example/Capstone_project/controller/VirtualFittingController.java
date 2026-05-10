@@ -135,13 +135,10 @@ public class VirtualFittingController {
     @Operation(summary = "피팅 결과 내 옷장 저장(저장하기)", description = "가상 피팅 결과를 옷장에 저장합니다.")
     @PatchMapping("/{taskId}")
     public ResponseEntity<ApiResponse<String>> saveFittingResult(@PathVariable Long taskId) {
-        FittingTask task = fittingService.checkStatus(taskId);
-        if (task == null) {
+        boolean saved = fittingService.markAsSaved(taskId);
+        if (!saved) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponse.error("기록 없음"));
         }
-
-        task.setSaved(true);
-        fittingService.saveTask(task);
         return ResponseEntity.ok(ApiResponse.success("저장 완료", null));
     }
 

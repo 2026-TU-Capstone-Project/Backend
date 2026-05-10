@@ -7,6 +7,7 @@ import lombok.Setter;
 import org.hibernate.annotations.Array;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
+import java.time.LocalDateTime;
 
 
 @Entity
@@ -18,6 +19,10 @@ public class FittingTask {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id; // task_id
+
+    @Version
+    @Column(name = "version")
+    private Long version;
 
     @Column(name = "user_id")
     private Long userId; // 유저ID
@@ -104,6 +109,9 @@ public class FittingTask {
     @Enumerated(EnumType.STRING)
     @Column(name = "bottom_fit_type", length = 20)
     private FitType bottomFitType; // 하의 핏 타입 (슬림핏, 레귤러핏, 오버핏)
+
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
 
     // 생성자 (주문 들어왔을 때)
     public FittingTask(FittingStatus status) {
