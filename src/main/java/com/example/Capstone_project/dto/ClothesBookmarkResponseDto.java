@@ -19,6 +19,9 @@ public class ClothesBookmarkResponseDto {
     @Schema(description = "출처 피드 ID")
     private Long feedId;
 
+    @Schema(description = "옷 ID (상세 조회 시 GET /clothes/{clothesId} 사용)")
+    private Long clothesId;
+
     @Schema(description = "포지션 (TOP / BOTTOM)")
     private String position;
 
@@ -41,6 +44,7 @@ public class ClothesBookmarkResponseDto {
         return ClothesBookmarkResponseDto.builder()
                 .id(bookmark.getId())
                 .feedId(feed.getId())
+                .clothesId(isTop ? feed.getTopClothesId() : feed.getBottomClothesId())
                 .position(bookmark.getPosition())
                 .imgUrl(isTop ? feed.getTopImageUrl() : feed.getBottomImageUrl())
                 .name(isTop ? feed.getTopName() : feed.getBottomName())

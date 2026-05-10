@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
-@Tag(name = "Clothes Bookmark", description = "피드에서 마음에 든 옷을 저장·조회·삭제합니다. 원본 피드나 FittingTask가 삭제돼도 독립적으로 유지됩니다.")
+@Tag(name = "Clothes Bookmark", description = "피드에서 마음에 든 옷을 저장·조회·삭제합니다. 원본 피드가 삭제되면 북마크도 함께 삭제됩니다.")
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/v1/clothes-bookmarks")
