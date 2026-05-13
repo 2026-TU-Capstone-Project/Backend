@@ -2,6 +2,7 @@ package com.example.Capstone_project.controller;
 
 import com.example.Capstone_project.common.dto.ApiResponse;
 import com.example.Capstone_project.config.CustomUserDetails;
+import com.example.Capstone_project.dto.CursorPageResponse;
 import com.example.Capstone_project.dto.FollowRequestItemDto;
 import com.example.Capstone_project.dto.FollowUserDto;
 import com.example.Capstone_project.service.FollowService;
@@ -73,41 +74,49 @@ public class FollowController {
         return ResponseEntity.ok(ApiResponse.success("팔로우 신청 목록 조회 성공", list));
     }
 
-    @Operation(summary = "내 팔로워 목록")
+    @Operation(summary = "내 팔로워 목록", description = "cursor=<lastFollowId>&limit=20. cursor 없으면 첫 페이지.")
     @GetMapping("/followers")
-    public ResponseEntity<ApiResponse<List<FollowUserDto>>> getFollowers(
+    public ResponseEntity<ApiResponse<CursorPageResponse<FollowUserDto>>> getFollowers(
+            @Parameter(description = "커서 (이전 응답의 nextCursor)") @RequestParam(required = false) Long cursor,
+            @Parameter(description = "페이지 크기 (기본 20)") @RequestParam(defaultValue = "20") int limit,
             @AuthenticationPrincipal CustomUserDetails userDetails
     ) {
-        List<FollowUserDto> list = followService.getFollowers(userDetails.getUser().getId());
-        return ResponseEntity.ok(ApiResponse.success("팔로워 목록 조회 성공", list));
+        CursorPageResponse<FollowUserDto> result = followService.getFollowers(userDetails.getUser().getId(), cursor, limit);
+        return ResponseEntity.ok(ApiResponse.success("팔로워 목록 조회 성공", result));
     }
 
-    @Operation(summary = "내 팔로잉 목록")
+    @Operation(summary = "내 팔로잉 목록", description = "cursor=<lastFollowId>&limit=20. cursor 없으면 첫 페이지.")
     @GetMapping("/followings")
-    public ResponseEntity<ApiResponse<List<FollowUserDto>>> getFollowings(
+    public ResponseEntity<ApiResponse<CursorPageResponse<FollowUserDto>>> getFollowings(
+            @Parameter(description = "커서 (이전 응답의 nextCursor)") @RequestParam(required = false) Long cursor,
+            @Parameter(description = "페이지 크기 (기본 20)") @RequestParam(defaultValue = "20") int limit,
             @AuthenticationPrincipal CustomUserDetails userDetails
     ) {
-        List<FollowUserDto> list = followService.getFollowings(userDetails.getUser().getId());
-        return ResponseEntity.ok(ApiResponse.success("팔로잉 목록 조회 성공", list));
+        CursorPageResponse<FollowUserDto> result = followService.getFollowings(userDetails.getUser().getId(), cursor, limit);
+        return ResponseEntity.ok(ApiResponse.success("팔로잉 목록 조회 성공", result));
     }
 
-    @Operation(summary = "특정 유저의 팔로워 목록")
+    @Operation(summary = "특정 유저의 팔로워 목록", description = "cursor=<lastFollowId>&limit=20. cursor 없으면 첫 페이지.")
     @GetMapping("/{userId}/followers")
-    public ResponseEntity<ApiResponse<List<FollowUserDto>>> getUserFollowers(
+    public ResponseEntity<ApiResponse<CursorPageResponse<FollowUserDto>>> getUserFollowers(
             @PathVariable Long userId,
+            @Parameter(description = "커서 (이전 응답의 nextCursor)") @RequestParam(required = false) Long cursor,
+            @Parameter(description = "페이지 크기 (기본 20)") @RequestParam(defaultValue = "20") int limit,
             @AuthenticationPrincipal CustomUserDetails userDetails
     ) {
-        List<FollowUserDto> list = followService.getFollowers(userId);
-        return ResponseEntity.ok(ApiResponse.success("팔로워 목록 조회 성공", list));
+        CursorPageResponse<FollowUserDto> result = followService.getFollowers(userId, cursor, limit);
+        return ResponseEntity.ok(ApiResponse.success("팔로워 목록 조회 성공", result));
     }
 
-    @Operation(summary = "특정 유저의 팔로잉 목록")
+    @Operation(summary = "특정 유저의 팔로잉 목록", description = "cursor=<lastFollowId>&limit=20. cursor 없으면 첫 페이지.")
     @GetMapping("/{userId}/followings")
-    public ResponseEntity<ApiResponse<List<FollowUserDto>>> getUserFollowings(
+    public ResponseEntity<ApiResponse<CursorPageResponse<FollowUserDto>>> getUserFollowings(
             @PathVariable Long userId,
+            @Parameter(description = "커서 (이전 응답의 nextCursor)") @RequestParam(required = false) Long cursor,
+            @Parameter(description = "페이지 크기 (기본 20)") @RequestParam(defaultValue = "20") int limit,
             @AuthenticationPrincipal CustomUserDetails userDetails
     ) {
-        List<FollowUserDto> list = followService.getFollowings(userId);
-        return ResponseEntity.ok(ApiResponse.success("팔로잉 목록 조회 성공", list));
+        CursorPageResponse<FollowUserDto> result = followService.getFollowings(userId, cursor, limit);
+        return ResponseEntity.ok(ApiResponse.success("팔로잉 목록 조회 성공", result));
     }
 }

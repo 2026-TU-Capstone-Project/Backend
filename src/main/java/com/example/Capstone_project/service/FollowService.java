@@ -6,12 +6,14 @@ import com.example.Capstone_project.common.exception.ResourceNotFoundException;
 import com.example.Capstone_project.domain.Follow;
 import com.example.Capstone_project.domain.FollowStatus;
 import com.example.Capstone_project.domain.User;
+import com.example.Capstone_project.dto.CursorPageResponse;
 import com.example.Capstone_project.dto.FollowRequestItemDto;
 import com.example.Capstone_project.dto.FollowUserDto;
 import com.example.Capstone_project.dto.UserPublicProfileResponseDto;
 import com.example.Capstone_project.repository.FollowRepository;
 import com.example.Capstone_project.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -89,23 +91,37 @@ public class FollowService {
                 .collect(Collectors.toList());
     }
 
-    /** 내 팔로워 목록 (ACCEPTED) */
+    /** 팔로워 목록 커서 페이지네이션 (ACCEPTED, followId DESC) */
     @Transactional(readOnly = true)
-    public List<FollowUserDto> getFollowers(Long userId) {
-        return followRepository.findFollowers(userId).stream()
-                .map(FollowUserDto::fromFollower)
-                .collect(Collectors.toList());
+    public CursorPageResponse<FollowUserDto> getFollowers(Long userId, Long cursor, int limit) {
+        long effectiveCursor = (cursor == null) ? Long.MAX_VALUE : cursor;
+        List<Follow> follows = followRepository.findFollowersCursor(
+                userId, effectiveCursor, PageRequest.of(0, limit + 1));
+        boolean hasMore = follows.size() > limit;
+        List<Follow> page = hasMore ? follows.subList(0, limit) : follows;
+        return CursorPageResponse.<FollowUserDto>builder()
+                .items(page.stream().map(FollowUserDto::fromFollower).collect(Collectors.toList()))
+                .nextCursor(hasMore ? String.valueOf(page.get(page.size() - 1).getId()) : null)
+                .hasMore(hasMore)
+                .build();
     }
 
-    /** 내 팔로잉 목록 (ACCEPTED) */
+    /** 팔로잉 목록 커서 페이지네이션 (ACCEPTED, followId DESC) */
     @Transactional(readOnly = true)
-    public List<FollowUserDto> getFollowings(Long userId) {
-        return followRepository.findFollowings(userId).stream()
-                .map(FollowUserDto::fromFollowing)
-                .collect(Collectors.toList());
+    public CursorPageResponse<FollowUserDto> getFollowings(Long userId, Long cursor, int limit) {
+        long effectiveCursor = (cursor == null) ? Long.MAX_VALUE : cursor;
+        List<Follow> follows = followRepository.findFollowingsCursor(
+                userId, effectiveCursor, PageRequest.of(0, limit + 1));
+        boolean hasMore = follows.size() > limit;
+        List<Follow> page = hasMore ? follows.subList(0, limit) : follows;
+        return CursorPageResponse.<FollowUserDto>builder()
+                .items(page.stream().map(FollowUserDto::fromFollowing).collect(Collectors.toList()))
+                .nextCursor(hasMore ? String.valueOf(page.get(page.size() - 1).getId()) : null)
+                .hasMore(hasMore)
+                .build();
     }
 
-    /** 다른 유저 공개 프로필 조회 (팔로워/팔로잉 수 + 나와의 관계 포함) */
+    /** 다른 유저 공개 프로필 조회 (팔로워/팔로잉 수 + 나와의 관계 + 맞팔 여부 포함) */
     @Transactional(readOnly = true)
     public UserPublicProfileResponseDto getPublicProfile(Long targetUserId, Long requesterId) {
         User target = findUser(targetUserId);
@@ -113,14 +129,18 @@ public class FollowService {
         long followingCount = followRepository.countByFollowerIdAndStatus(targetUserId, FollowStatus.ACCEPTED);
 
         String followStatus = null;
+        boolean followsMeBack = false;
         if (requesterId != null && !requesterId.equals(targetUserId)) {
             followStatus = followRepository.findByFollowerIdAndFollowingId(requesterId, targetUserId)
                     .map(f -> f.getStatus().name())
                     .orElse(null);
+            followsMeBack = followRepository.findByFollowerIdAndFollowingId(targetUserId, requesterId)
+                    .map(f -> f.getStatus() == FollowStatus.ACCEPTED)
+                    .orElse(false);
         }
 
         boolean isMe = requesterId != null && requesterId.equals(targetUserId);
-        return UserPublicProfileResponseDto.from(target, followerCount, followingCount, followStatus, isMe);
+        return UserPublicProfileResponseDto.from(target, followerCount, followingCount, followStatus, isMe, followsMeBack);
     }
 
     private User findUser(Long userId) {
