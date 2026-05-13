@@ -26,9 +26,11 @@ public class UserPublicProfileResponseDto {
     private String followStatus;
     @Schema(description = "본인 여부")
     private boolean isMe;
+    @Schema(description = "상대가 나를 팔로우하는지 여부 (맞팔 확인용). 비로그인 또는 본인 조회 시 false.")
+    private boolean followsMeBack;
 
     public static UserPublicProfileResponseDto from(User user, long followerCount, long followingCount,
-                                                     String followStatus, boolean isMe) {
+                                                     String followStatus, boolean isMe, boolean followsMeBack) {
         return UserPublicProfileResponseDto.builder()
                 .userId(user.getId())
                 .username(user.getUsername())
@@ -38,6 +40,7 @@ public class UserPublicProfileResponseDto {
                 .followingCount(followingCount)
                 .followStatus(followStatus)
                 .isMe(isMe)
+                .followsMeBack(followsMeBack)
                 .build();
     }
 }
