@@ -115,6 +115,60 @@ public class ClothesSetService {
         fittingRepository.save(task);
     }
 
+    /**
+     * [조회] 특정 폴더 상세 조회
+     */
+    @Transactional(readOnly = true)
+    public ClothesSetResponseDto getSetDetail(Long setId, User user) {
+        ClothesSet set = clothesSetRepository.findById(setId)
+                .orElseThrow(() -> new RuntimeException("세트를 찾을 수 없습니다."));
+
+        if (!set.getUser().getId().equals(user.getId())) {
+            throw new RuntimeException("조회 권한이 없습니다.");
+        }
+
+        String mainImg = set.getFittingTasks().isEmpty() ? null :
+                set.getFittingTasks().get(set.getFittingTasks().size() - 1).getResultImgUrl();
+
+        return new ClothesSetResponseDto(
+                set.getId(),
+                set.getSetName(),
+                mainImg,
+                set.getFittingTasks().stream()
+                        .map(f -> new ClothesSetResponseDto.FittingDto(f.getId(), f.getResultImgUrl()))
+                        .collect(Collectors.toList()),
+                set.getClothes().stream()
+                        .map(c -> new ClothesSetResponseDto.ClothesDto(c.getId(), c.getName(), c.getCategory(), c.getImgUrl()))
+                        .collect(Collectors.toList())
+        );
+    }
+
+    /**
+     * [추가] 기존 폴더에 착장 추가
+     */
+    @Transactional
+    public void addFittingToSet(Long setId, Long fittingTaskId, List<Long> clothesIds, User user) {
+        ClothesSet set = clothesSetRepository.findById(setId)
+                .orElseThrow(() -> new RuntimeException("세트를 찾을 수 없습니다."));
+
+        if (!set.getUser().getId().equals(user.getId())) {
+            throw new RuntimeException("추가 권한이 없습니다.");
+        }
+
+        FittingTask fittingTask = fittingRepository.findById(fittingTaskId)
+                .orElseThrow(() -> new RuntimeException("피팅 결과를 찾을 수 없습니다."));
+
+        fittingTask.setClothesSet(set);
+        fittingTask.setSaved(true);
+        fittingRepository.save(fittingTask);
+
+        if (clothesIds != null && !clothesIds.isEmpty()) {
+            List<Clothes> clothesList = clothesRepository.findAllById(clothesIds);
+            set.getClothes().addAll(clothesList);
+            clothesSetRepository.save(set);
+        }
+    }
+
 
     /**
      * [삭제] 코디 세트(폴더) 삭제

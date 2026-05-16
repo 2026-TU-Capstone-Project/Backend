@@ -96,6 +96,28 @@ public class ClothesSetController {
         return ResponseEntity.ok(ApiResponse.success("선택한 착장이 삭제되었습니다.", null));
     }
 
+    @Operation(summary = "폴더 상세 조회", description = "특정 폴더 안의 착장 목록을 조회합니다.")
+    @GetMapping("/{id}")
+    public ResponseEntity<ApiResponse<ClothesSetResponseDto>> getSetDetail(
+            @PathVariable Long id,
+            @AuthenticationPrincipal CustomUserDetails userDetails
+    ) {
+        return ResponseEntity.ok(ApiResponse.success("폴더 상세 조회 성공",
+                clothesSetService.getSetDetail(id, userDetails.getUser())));
+    }
+
+    @Operation(summary = "폴더에 착장 추가", description = "기존 폴더에 새 피팅 결과를 추가합니다.")
+    @PostMapping("/{id}/fittings")
+    public ResponseEntity<ApiResponse<String>> addFittingToSet(
+            @PathVariable Long id,
+            @RequestBody SaveRequest request,
+            @AuthenticationPrincipal CustomUserDetails userDetails
+    ) {
+        clothesSetService.addFittingToSet(id, request.getFittingTaskId(), request.getClothesIds(), userDetails.getUser());
+        return ResponseEntity.ok(ApiResponse.success("착장이 추가되었습니다.", null));
+    }
+
+
     // 폴더 삭제
     @Operation(summary = "폴더 전체 삭제", description = "코디 폴더와 그 안의 모든 내용을 삭제합니다.")
     @DeleteMapping("/{id}")
