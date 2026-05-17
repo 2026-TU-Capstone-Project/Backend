@@ -55,6 +55,10 @@ public interface FeedRepository extends JpaRepository<Feed, Long> {
     @Query("SELECT f FROM Feed f JOIN FETCH f.user WHERE f.user.id = :userId AND f.deletedAt IS NULL ORDER BY f.createdAt DESC")
     Page<Feed> findAllByUserIdAndDeletedAtIsNullWithUser(@Param("userId") Long userId, Pageable pageable);
 
+    @Query(value = "SELECT f FROM Feed f JOIN FETCH f.user WHERE f.user.id = :userId AND f.deletedAt IS NULL AND f.visibility = 'PUBLIC' ORDER BY f.createdAt DESC",
+           countQuery = "SELECT COUNT(f) FROM Feed f WHERE f.user.id = :userId AND f.deletedAt IS NULL AND f.visibility = 'PUBLIC'")
+    Page<Feed> findPublicFeedsByUserId(@Param("userId") Long userId, Pageable pageable);
+
     @Query("SELECT f FROM Feed f JOIN FETCH f.user WHERE f.id = :id AND f.deletedAt IS NULL")
     Optional<Feed> findByIdAndDeletedAtIsNullWithUser(@Param("id") Long id);
 

@@ -33,8 +33,12 @@ public class UserProfileResponseDto {
     private Float weight;
     @Schema(description = "성별 (MALE, FEMALE)")
     private Gender gender;
+    @Schema(description = "팔로워 수")
+    private long followerCount;
+    @Schema(description = "팔로잉 수")
+    private long followingCount;
 
-    public static UserProfileResponseDto from(User user) {
+    public static UserProfileResponseDto from(User user, long followerCount, long followingCount) {
         if (user == null) return null;
         return UserProfileResponseDto.builder()
                 .userId(user.getId())
@@ -45,6 +49,8 @@ public class UserProfileResponseDto {
                 .height(user.getHeight())
                 .weight(user.getWeight())
                 .gender(user.getGender())
+                .followerCount(followerCount)
+                .followingCount(followingCount)
                 .build();
     }
 }

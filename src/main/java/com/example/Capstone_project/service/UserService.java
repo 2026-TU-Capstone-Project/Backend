@@ -33,7 +33,9 @@ public class UserService {
     public UserProfileResponseDto getMyProfile(Long userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
-        return UserProfileResponseDto.from(user);
+        long followerCount = followRepository.countByFollowingIdAndStatus(userId, FollowStatus.ACCEPTED);
+        long followingCount = followRepository.countByFollowerIdAndStatus(userId, FollowStatus.ACCEPTED);
+        return UserProfileResponseDto.from(user, followerCount, followingCount);
     }
 
     @Transactional
@@ -58,7 +60,9 @@ public class UserService {
         }
 
         userRepository.save(user);
-        return UserProfileResponseDto.from(user);
+        long followerCount = followRepository.countByFollowingIdAndStatus(userId, FollowStatus.ACCEPTED);
+        long followingCount = followRepository.countByFollowerIdAndStatus(userId, FollowStatus.ACCEPTED);
+        return UserProfileResponseDto.from(user, followerCount, followingCount);
     }
 
     /**
@@ -122,7 +126,9 @@ public class UserService {
         }
 
         userRepository.save(user);
-        return UserProfileResponseDto.from(user);
+        long followerCount = followRepository.countByFollowingIdAndStatus(userId, FollowStatus.ACCEPTED);
+        long followingCount = followRepository.countByFollowerIdAndStatus(userId, FollowStatus.ACCEPTED);
+        return UserProfileResponseDto.from(user, followerCount, followingCount);
     }
 
     /** username / 이름으로 유저 검색 (최대 20명) */
