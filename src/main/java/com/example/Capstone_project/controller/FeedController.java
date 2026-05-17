@@ -87,6 +87,19 @@ public class FeedController {
                 feedService.listMy(userId, page, size)));
     }
 
+    @Operation(summary = "특정 유저 피드 목록", description = "해당 유저의 PUBLIC 피드만 최신순으로 조회합니다.")
+    @GetMapping("/users/{userId}")
+    public ResponseEntity<ApiResponse<Page<FeedListResponseDto>>> listByUser(
+            @Parameter(description = "조회할 유저 ID", required = true) @PathVariable Long userId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @AuthenticationPrincipal CustomUserDetails userDetails
+    ) {
+        Long requesterId = userDetails != null ? userDetails.getUser().getId() : null;
+        return ResponseEntity.ok(ApiResponse.success("유저 피드 목록 조회 성공",
+                feedService.listByUser(userId, requesterId, page, size)));
+    }
+
     @Operation(summary = "피드 상세")
     @GetMapping("/{feedId}")
     public ResponseEntity<ApiResponse<FeedDetailResponseDto>> getDetail(

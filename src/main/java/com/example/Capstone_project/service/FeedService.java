@@ -138,6 +138,15 @@ public class FeedService {
     }
 
     @Transactional(readOnly = true)
+    public Page<FeedListResponseDto> listByUser(Long targetUserId, Long requesterId, int page, int size) {
+        if (!userRepository.existsById(targetUserId)) {
+            throw new ResourceNotFoundException("사용자를 찾을 수 없습니다. id=" + targetUserId);
+        }
+        Page<Feed> feeds = feedRepository.findPublicFeedsByUserId(targetUserId, PageRequest.of(page, size));
+        return enrichWithLikes(feeds, requesterId);
+    }
+
+    @Transactional(readOnly = true)
     public FeedDetailResponseDto getDetail(Long feedId, Long userId) {
         Feed feed = feedRepository.findByIdAndDeletedAtIsNullWithUser(feedId)
                 .orElseThrow(() -> new ResourceNotFoundException("피드를 찾을 수 없습니다. id=" + feedId));
