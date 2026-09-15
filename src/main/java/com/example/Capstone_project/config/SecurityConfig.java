@@ -2,6 +2,7 @@ package com.example.Capstone_project.config;
 
 import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Lazy;
@@ -20,6 +21,10 @@ public class SecurityConfig {
 
 	private final JwtTokenProvider jwtTokenProvider;
 	private final UserDetailsService userDetailsService;
+
+	/** storage.type=local 일 때 로컬 저장 이미지가 서빙되는 경로 (GCS 공개 URL 과 동일하게 인증 없이 접근) */
+	@Value("${storage.local.url-path:/files}")
+	private String localFilesUrlPath;
 
 	public SecurityConfig(JwtTokenProvider jwtTokenProvider,
 						  @Lazy UserDetailsService userDetailsService) {
@@ -46,6 +51,7 @@ public class SecurityConfig {
 						.requestMatchers("/v3/api-docs/**", "/v3/api-docs").permitAll()
 						.requestMatchers("/swagger-ui/**", "/swagger-ui.html").permitAll()
 						.requestMatchers("/api/v1/auth/**").permitAll()
+						.requestMatchers(localFilesUrlPath + "/**").permitAll()
 
 						.anyRequest().authenticated()
 				)

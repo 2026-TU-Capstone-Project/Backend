@@ -172,6 +172,19 @@ docker-compose up -d postgres redis
 java -jar build/libs/*.jar
 ```
 
+### 로컬 시연 실행 (클라우드/GCS 없이)
+
+사진 저장소를 `storage.type=local` 로 전환해 **GCS 키 없이** 노트북 한 대에서 전체 백엔드를 돌릴 수 있습니다.
+
+```bash
+./run-local.sh                                              # DB/Redis(Docker) 기동 + local 프로파일 실행 (8080)
+STORAGE_PUBLIC_BASE_URL=http://10.0.2.2:8080 ./run-local.sh   # Android 에뮬레이터에서 접속할 때
+```
+
+- 사진은 `local-storage/` 에 저장되고 `http://<백엔드주소>/files/...` 로 서빙됩니다.
+- 앱의 API base URL 과 `STORAGE_PUBLIC_BASE_URL` 을 같은 값으로 맞춰야 이미지가 보입니다.
+- 자세한 내용: [docs/local-demo-setup.md](docs/local-demo-setup.md)
+
 ## 💻 개발 가이드
 
 ### 데이터베이스 접속

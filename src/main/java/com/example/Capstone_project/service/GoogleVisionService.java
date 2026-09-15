@@ -11,6 +11,7 @@ import com.google.cloud.vision.v1.Image;
 import com.google.cloud.vision.v1.ImageAnnotatorClient;
 import com.google.cloud.vision.v1.ImageAnnotatorSettings;
 import com.google.protobuf.ByteString;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -21,6 +22,7 @@ import java.util.List;
 
 @Service
 @Profile("!test")
+@ConditionalOnProperty(name = "storage.type", havingValue = "gcs", matchIfMissing = true) // GoogleCredentials 필요
 public class GoogleVisionService {
 
     private final GoogleCredentials googleCredentials;

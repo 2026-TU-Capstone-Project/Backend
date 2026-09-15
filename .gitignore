@@ -58,3 +58,5 @@ src/main/resources/application-secret.properties
 google-key.json
 
 Frontend/
+### Local demo storage (storage.type=local)
+local-storage/

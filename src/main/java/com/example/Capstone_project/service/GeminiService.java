@@ -4,6 +4,7 @@ package com.example.Capstone_project.service;
 import com.example.Capstone_project.common.exception.BadRequestException;
 import com.example.Capstone_project.domain.Gender;
 import com.example.Capstone_project.dto.*; // VirtualFittingResponse 등 모든 DTO 포함
+import com.example.Capstone_project.storage.ImageStorageService;
 
 // 2. Lombok & JSON 처리 (
 import lombok.RequiredArgsConstructor;
@@ -49,7 +50,7 @@ public class GeminiService {
 	
 
 	private final WebClient geminiWebClient;
-	private final GoogleCloudStorageService gcsService;
+	private final ImageStorageService imageStorageService;
 	private final ObjectMapper objectMapper = new ObjectMapper();
 
 	@Value("${gemini.api.key}")
@@ -143,17 +144,16 @@ public class GeminiService {
 	}
 	
 	/**
-	 * Base64 이미지 데이터를 GCS에 저장하고 공개 URL 반환
+	 * Base64 이미지 데이터를 이미지 저장소(GCS 또는 로컬)에 저장하고 공개 URL 반환
 	 */
 	private String saveBase64ImageToFile(String imageBase64, String mimeType) throws IOException {
-		// GCS에 업로드 (MIME 타입이 없으면 기본값으로 image/jpeg 사용)
+		// MIME 타입이 없으면 기본값으로 image/jpeg 사용
 		String contentType = mimeType != null ? mimeType : "image/jpeg";
-		String gcsUrl = gcsService.uploadBase64Image(imageBase64, contentType);
+		String imageUrl = imageStorageService.uploadBase64Image(imageBase64, contentType);
 		
-		log.info("Image uploaded to GCS - URL: {}", gcsUrl);
+		log.info("Image uploaded to storage - URL: {}", imageUrl);
 		
-		// GCS 공개 URL 반환
-		return gcsUrl;
+		return imageUrl;
 	}
 	
 	/**
