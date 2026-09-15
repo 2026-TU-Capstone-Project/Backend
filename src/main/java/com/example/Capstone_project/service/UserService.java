@@ -12,6 +12,7 @@ import com.example.Capstone_project.dto.UserProfileUpdateDto;
 import com.example.Capstone_project.dto.UserSearchResponseDto;
 import com.example.Capstone_project.repository.FollowRepository;
 import com.example.Capstone_project.repository.UserRepository;
+import com.example.Capstone_project.storage.ImageStorageService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -26,7 +27,7 @@ import java.util.stream.Collectors;
 public class UserService {
 
     private final UserRepository userRepository;
-    private final GoogleCloudStorageService gcsService;
+    private final ImageStorageService imageStorageService;
     private final FollowRepository followRepository;
 
     @Transactional(readOnly = true)
@@ -117,7 +118,7 @@ public class UserService {
                     ? profileImageFilename.substring(profileImageFilename.lastIndexOf("."))
                     : ".jpg";
             String filename = "user-" + userId + "-" + UUID.randomUUID().toString() + extension;
-            String profileImageUrl = gcsService.uploadProfileImage(
+            String profileImageUrl = imageStorageService.uploadProfileImage(
                     profileImageBytes,
                     filename,
                     profileImageContentType != null ? profileImageContentType : "image/jpeg"

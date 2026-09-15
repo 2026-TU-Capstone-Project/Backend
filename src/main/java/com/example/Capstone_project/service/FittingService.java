@@ -10,6 +10,7 @@ import com.example.Capstone_project.domain.FittingTask;
 import com.example.Capstone_project.domain.User;
 import com.example.Capstone_project.repository.ClothesRepository;
 import com.example.Capstone_project.repository.FittingRepository;
+import com.example.Capstone_project.storage.ImageStorageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -33,7 +34,7 @@ public class FittingService {
     private final GeminiService geminiService;
     private final FittingRepository fittingRepository;
     private final ClothesRepository clothesRepository;
-    private final GoogleCloudStorageService gcsService;
+    private final ImageStorageService imageStorageService;
     private final VirtualFittingSseService virtualFittingSseService;
     @Qualifier("taskExecutor")
     private final Executor taskExecutor;
@@ -105,7 +106,7 @@ public class FittingService {
                             ? userImageFilename
                             : java.util.UUID.randomUUID().toString() + ".jpg";
 
-                    bodyImgUrl = gcsService.uploadUserBodyImage(
+                    bodyImgUrl = imageStorageService.uploadUserBodyImage(
                             userImgData,
                             filename,
                             "image/jpeg"
@@ -329,7 +330,7 @@ public class FittingService {
      * 가상 피팅 결과 이미지의 스타일 분석 + 이미지 속 인물 성별 판별
      * Gemini가 스타일 설명과 함께 사진 속 인물이 남성/여성인지 판별함
      *
-     * @param resultImgUrl 가상 피팅 결과 이미지 URL (GCS URL 또는 로컬 경로)
+     * @param resultImgUrl 가상 피팅 결과 이미지 URL (저장소 URL 또는 레거시 로컬 경로)
      * @return 스타일 분석 + 성별 (resultGender)
      */
     private StyleAnalysisResult analyzeVirtualFittingResultImage(String resultImgUrl) throws IOException {
@@ -337,12 +338,12 @@ public class FittingService {
         
         byte[] imageBytes;
         
-        // GCS URL인지 확인 (storage.googleapis.com 포함)
-        if (resultImgUrl != null && resultImgUrl.contains("storage.googleapis.com")) {
-            // GCS에서 이미지 다운로드
-            String blobName = gcsService.extractBlobNameFromUrl(resultImgUrl);
-            imageBytes = gcsService.downloadImage(blobName);
-            log.info("📸 GCS에서 이미지 다운로드 완료 - 크기: {} bytes", imageBytes.length);
+        // 이미지 저장소(GCS 또는 로컬 저장소)가 발급한 URL인지 확인
+        if (imageStorageService.isManagedUrl(resultImgUrl)) {
+            // 저장소에서 이미지 다운로드
+            String objectName = imageStorageService.extractObjectNameFromUrl(resultImgUrl);
+            imageBytes = imageStorageService.downloadImage(objectName);
+            log.info("📸 저장소에서 이미지 다운로드 완료 - 크기: {} bytes", imageBytes.length);
         } else {
             // 로컬 파일 시스템에서 읽기 (하위 호환성)
             String filename = resultImgUrl.substring(resultImgUrl.lastIndexOf("/") + 1);
@@ -414,7 +415,7 @@ public class FittingService {
                     String filename = (userImageFilename != null && !userImageFilename.isEmpty())
                             ? userImageFilename
                             : java.util.UUID.randomUUID().toString() + ".jpg";
-                    bodyImgUrl = gcsService.uploadUserBodyImage(userImageBytes, filename, "image/jpeg");
+                    bodyImgUrl = imageStorageService.uploadUserBodyImage(userImageBytes, filename, "image/jpeg");
                 } catch (Exception e) {
                     log.error("❌ 전신 사진 GCS 업로드 실패 - Task ID: {}", taskId, e);
                 }

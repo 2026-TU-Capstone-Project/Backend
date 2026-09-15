@@ -8,6 +8,7 @@ import com.example.Capstone_project.dto.ClothesAnalysisResultDto;
 import com.example.Capstone_project.dto.ClothesUploadStatusResponse;
 import com.example.Capstone_project.repository.ClothesRepository;
 import com.example.Capstone_project.repository.ClothesUploadTaskRepository;
+import com.example.Capstone_project.storage.ImageStorageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
@@ -25,7 +26,7 @@ public class ClothesAnalysisService {
 
     private final GeminiService geminiService;
     private final ClothesRepository clothesRepository;
-    private final GoogleCloudStorageService gcsService;
+    private final ImageStorageService imageStorageService;
     private final ClothesUploadTaskRepository clothesUploadTaskRepository;
     private final ClothesUploadSseService clothesUploadSseService;
 
@@ -48,11 +49,11 @@ public class ClothesAnalysisService {
 
         String imgUrl;
         if ("Top".equalsIgnoreCase(category)) {
-            imgUrl = gcsService.uploadTopImage(imageBytes, uniqueFilename, "image/jpeg");
+            imgUrl = imageStorageService.uploadTopImage(imageBytes, uniqueFilename, "image/jpeg");
         } else if ("Bottom".equalsIgnoreCase(category)) {
-            imgUrl = gcsService.uploadBottomImage(imageBytes, uniqueFilename, "image/jpeg");
+            imgUrl = imageStorageService.uploadBottomImage(imageBytes, uniqueFilename, "image/jpeg");
         } else {
-            imgUrl = gcsService.uploadImage(imageBytes, uniqueFilename, "image/jpeg");
+            imgUrl = imageStorageService.uploadImage(imageBytes, uniqueFilename, "image/jpeg");
         }
 
         // [Step 2] Gemini 호출 (트랜잭션 없음 - 오래 걸리는 외부 API)

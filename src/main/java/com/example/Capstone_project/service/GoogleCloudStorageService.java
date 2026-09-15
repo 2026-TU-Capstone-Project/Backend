@@ -1,5 +1,6 @@
 package com.example.Capstone_project.service;
 
+import com.example.Capstone_project.storage.ImageStorageService;
 import com.google.auth.oauth2.GoogleCredentials;
 import com.google.cloud.storage.BlobId;
 import com.google.cloud.storage.BlobInfo;
@@ -7,15 +8,20 @@ import com.google.cloud.storage.Storage;
 import com.google.cloud.storage.StorageOptions;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 
-import java.util.UUID;
-
+/**
+ * Google Cloud Storage 구현체 ({@code storage.type=gcs}, 기본값).
+ * 로컬 시연 등 클라우드 없이 실행할 때는 {@code storage.type=local} 로 전환하면
+ * {@link com.example.Capstone_project.storage.LocalImageStorageService} 가 대신 사용된다.
+ */
 @Slf4j
 @Service
 @Profile("!test")
-public class GoogleCloudStorageService {
+@ConditionalOnProperty(name = "storage.type", havingValue = "gcs", matchIfMissing = true)
+public class GoogleCloudStorageService implements ImageStorageService {
 
     private final Storage storage;
     private final String bucketName;
@@ -45,6 +51,7 @@ public class GoogleCloudStorageService {
      * @param contentType MIME 타입 (예: "image/jpeg")
      * @return GCS에 저장된 이미지의 공개 URL
      */
+    @Override
     public String uploadImage(byte[] imageBytes, String filename, String contentType) {
         try {
             // 폴더 경로와 파일명을 결합하여 전체 경로 생성
@@ -72,39 +79,12 @@ public class GoogleCloudStorageService {
     }
 
     /**
-     * Base64 이미지를 GCS에 업로드하고 공개 URL 반환
-     * 
-     * @param imageBase64 Base64 인코딩된 이미지 문자열
-     * @param mimeType MIME 타입 (예: "image/jpeg")
-     * @return GCS에 저장된 이미지의 공개 URL
-     */
-    public String uploadBase64Image(String imageBase64, String mimeType) {
-        // 파일 확장자 결정
-        String extension = "jpg";
-        if (mimeType != null) {
-            if (mimeType.contains("png")) {
-                extension = "png";
-            } else if (mimeType.contains("jpeg") || mimeType.contains("jpg")) {
-                extension = "jpg";
-            }
-        }
-        
-        // 고유한 파일명 생성
-        String filename = UUID.randomUUID().toString() + "." + extension;
-        
-        // Base64 디코딩
-        byte[] imageBytes = java.util.Base64.getDecoder().decode(imageBase64);
-        
-        // GCS에 업로드
-        return uploadImage(imageBytes, filename, mimeType != null ? mimeType : "image/jpeg");
-    }
-
-    /**
      * GCS에서 이미지 다운로드
      * 
      * @param blobName GCS 내 파일 경로 (폴더/파일명)
      * @return 이미지 바이트 배열
      */
+    @Override
     public byte[] downloadImage(String blobName) {
         try {
             BlobId blobId = BlobId.of(bucketName, blobName);
@@ -126,6 +106,7 @@ public class GoogleCloudStorageService {
      * @param contentType MIME 타입 (예: "image/jpeg")
      * @return GCS에 저장된 이미지의 공개 URL
      */
+    @Override
     public String uploadProfileImage(byte[] imageBytes, String filename, String contentType) {
         try {
             String blobName = "profile-images/" + filename;
@@ -152,6 +133,7 @@ public class GoogleCloudStorageService {
      * @param contentType MIME 타입 (예: "image/jpeg")
      * @return GCS에 저장된 이미지의 공개 URL
      */
+    @Override
     public String uploadUserBodyImage(byte[] imageBytes, String filename, String contentType) {
         try {
             // user-body-img 폴더 경로와 파일명을 결합하여 전체 경로 생성
@@ -187,6 +169,7 @@ public class GoogleCloudStorageService {
      * @param contentType MIME 타입 (예: "image/jpeg")
      * @return GCS에 저장된 이미지의 공개 URL
      */
+    @Override
     public String uploadTopImage(byte[] imageBytes, String filename, String contentType) {
         try {
             // top-img 폴더 경로와 파일명을 결합하여 전체 경로 생성
@@ -222,6 +205,7 @@ public class GoogleCloudStorageService {
      * @param contentType MIME 타입 (예: "image/jpeg")
      * @return GCS에 저장된 이미지의 공개 URL
      */
+    @Override
     public String uploadBottomImage(byte[] imageBytes, String filename, String contentType) {
         try {
             // bottom-img 폴더 경로와 파일명을 결합하여 전체 경로 생성
@@ -248,6 +232,12 @@ public class GoogleCloudStorageService {
         }
     }
 
+    /** 이 버킷의 공개 URL(https://storage.googleapis.com/{bucket}/...) 인지 여부 */
+    @Override
+    public boolean isManagedUrl(String url) {
+        return url != null && url.contains("storage.googleapis.com/" + bucketName + "/");
+    }
+
     /**
      * GCS URL에서 Blob 이름 추출
      * 예: https://storage.googleapis.com/tu-capstone-project/virtual-fitting-img/uuid.jpg
@@ -256,7 +246,8 @@ public class GoogleCloudStorageService {
      * @param gcsUrl GCS 공개 URL
      * @return Blob 이름 (폴더/파일명)
      */
-    public String extractBlobNameFromUrl(String gcsUrl) {
+    @Override
+    public String extractObjectNameFromUrl(String gcsUrl) {
         if (gcsUrl == null || !gcsUrl.contains("storage.googleapis.com")) {
             throw new IllegalArgumentException("Invalid GCS URL: " + gcsUrl);
         }
@@ -270,6 +261,8 @@ public class GoogleCloudStorageService {
         
         return gcsUrl.substring(index + prefix.length());
     }
+
+    @Override
     public void deleteImage(String blobName) {
         try {
             com.google.cloud.storage.BlobId blobId = com.google.cloud.storage.BlobId.of(bucketName, blobName);

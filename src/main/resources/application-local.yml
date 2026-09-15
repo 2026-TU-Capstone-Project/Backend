@@ -1,0 +1,43 @@
+# =====================================================================
+# 로컬 시연/개발용 프로파일  (실행: ./run-local.sh  또는  SPRING_PROFILES_ACTIVE=local ./gradlew bootRun)
+#
+# - 개인 설정 파일 application.properties(git 미추적: DB 비밀번호, Gemini 키 등) 위에 덮어씌워진다.
+# - 클라우드(GCS) 없이 동작: 사진은 로컬 디스크(local-storage/)에 저장하고 /files/** 로 서빙한다.
+# - DB/Redis 는 docker-compose.dev.yml 로 띄운 컨테이너(15432 / 6379)를 사용한다.
+# =====================================================================
+
+server:
+  port: ${SERVER_PORT:8080}          # 맥에서 80 포트는 권한 문제가 있어 8080 사용
+
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://127.0.0.1:15432/capstone_db}
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+
+# ---------------------------------------------------------------------
+# 이미지 저장소: gcs(기본) | local
+# ---------------------------------------------------------------------
+storage:
+  type: local
+  local:
+    root-dir: ${STORAGE_LOCAL_ROOT_DIR:./local-storage}   # 사진이 저장되는 폴더 (프로젝트 루트 기준)
+    url-path: /files                                      # 정적 서빙 경로 → http://<백엔드주소>/files/top-img/xxx.jpg
+    # 앱(프론트)이 이미지 URL을 열 때 쓰는 "백엔드 주소". 프론트의 API base URL과 같은 값이어야 한다.
+    #   - iOS 시뮬레이터 / 같은 PC 브라우저 : http://localhost:8080
+    #   - Android 에뮬레이터              : http://10.0.2.2:8080
+    #   - 실기기(같은 Wi-Fi)              : http://<맥 IP>:8080   (예: http://192.168.0.10:8080)
+    public-base-url: ${STORAGE_PUBLIC_BASE_URL:http://localhost:8080}
+    fitting-folder: virtual-fitting-img                   # 가상 피팅 결과 폴더 (GCS 의 gcs.folder-path 와 동일)
+
+# 소셜 로그인 리다이렉트(브라우저 테스트용) — 앱은 id_token 방식이라 영향 없음
+app:
+  auth:
+    redirect-uri: ${APP_AUTH_REDIRECT_URI:http://localhost:8080/swagger-ui/index.html}
+
+logging:
+  level:
+    root: INFO
+    com.example.Capstone_project: INFO

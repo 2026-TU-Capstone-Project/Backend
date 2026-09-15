@@ -15,7 +15,7 @@ import com.example.Capstone_project.repository.ClothesUploadTaskRepository;
 import com.example.Capstone_project.repository.FittingRepository;
 import com.example.Capstone_project.service.ClothesAnalysisService;
 import com.example.Capstone_project.service.ClothesUploadSseService;
-import com.example.Capstone_project.service.GoogleCloudStorageService;
+import com.example.Capstone_project.storage.ImageStorageService;
 import com.example.Capstone_project.service.RedisLockService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.example.Capstone_project.config.CustomUserDetails;
@@ -51,7 +51,7 @@ public class ClothesController {
     private final FittingRepository fittingRepository;
     private final ClothesAnalysisService clothesAnalysisService;
     private final ClothesUploadSseService clothesUploadSseService;
-    private final GoogleCloudStorageService gcsService;
+    private final ImageStorageService imageStorageService;
     private final RedisLockService redisLockService;
     private final ObjectMapper objectMapper;
 
@@ -243,15 +243,15 @@ public class ClothesController {
         fittingRepository.clearBottomIdByClothesId(id);
         clothesRepository.delete(clothes);
 
-        // GCS 삭제는 DB 커밋 성공 후에만 실행 — 커밋 전 실패 시 GCS 파일이 남는 문제 방지
-        final String blobName = gcsService.extractBlobNameFromUrl(clothes.getImgUrl());
+        // 저장소(GCS/로컬) 이미지 삭제는 DB 커밋 성공 후에만 실행 — 커밋 전 실패 시 파일이 남는 문제 방지
+        final String blobName = imageStorageService.extractObjectNameFromUrl(clothes.getImgUrl());
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
                 try {
-                    gcsService.deleteImage(blobName);
+                    imageStorageService.deleteImage(blobName);
                 } catch (Exception e) {
-                    log.warn("GCS 이미지 삭제 실패 (DB는 이미 커밋됨): {}", blobName, e);
+                    log.warn("저장소 이미지 삭제 실패 (DB는 이미 커밋됨): {}", blobName, e);
                 }
             }
         });
